@@ -3,7 +3,7 @@
 // ============================================================
 
 // ── CONFIG — Update GAS_URL after deploying your Apps Script ──
-const GAS_URL = 'YOUR_GAS_WEB_APP_URL_HERE';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyWDLfdX-mLBw3WDIjNVNUQBokq_g3X7L0fNqAiOjjMCSc1HEWsl0WfpqvRhGGgnY2V/exec';
 
 // ── State ──────────────────────────────────────────────────
 const State = {
