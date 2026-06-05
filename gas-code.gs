@@ -7,11 +7,21 @@ const SHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 const ss = SpreadsheetApp.getActiveSpreadsheet();
 
 function doGet(e) {
-  return handleRequest(e);
+  const result = handleRequest(e);
+  const json = JSON.stringify(result);
+  const cb = (e.parameter || {}).callback;
+  if (cb) {
+    return ContentService.createTextOutput(cb + '(' + json + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(json)
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
-  return handleRequest(e);
+  const result = handleRequest(e);
+  return ContentService.createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function handleRequest(e) {
@@ -22,14 +32,23 @@ function handleRequest(e) {
   let result;
   try {
     switch (action) {
-      case 'checkUser':       result = checkUser(params.email || postData.email); break;
-      case 'getSettings':     result = getSettings(); break;
-      case 'getMembers':      result = getMembers(); break;
-      case 'getMeetings':     result = getMeetings(); break;
-      case 'addMeeting':      result = addMeeting(postData); break;
-      case 'getAttendance':   result = getAttendance(params.meetingId || postData.meetingId); break;
-      case 'saveAttendance':  result = saveAttendance(postData); break;
-      case 'getTodayEvents':  result = getTodayEvents(); break;
+      case 'checkUser':      result = checkUser(params.email || postData.email); break;
+      case 'getSettings':    result = getSettings(); break;
+      case 'getMembers':     result = getMembers(); break;
+      case 'getMeetings':    result = getMeetings(); break;
+      case 'addMeeting': {
+        const p = Object.keys(postData).length ? postData : params;
+        result = addMeeting(p);
+        break;
+      }
+      case 'getAttendance':  result = getAttendance(params.meetingId || postData.meetingId); break;
+      case 'saveAttendance': {
+        const p = Object.keys(postData).length ? postData : params;
+        if (typeof p.records === 'string') p.records = JSON.parse(p.records);
+        result = saveAttendance(p);
+        break;
+      }
+      case 'getTodayEvents': result = getTodayEvents(); break;
       default:
         result = { success: false, error: 'Unknown action: ' + action };
     }
@@ -37,9 +56,7 @@ function handleRequest(e) {
     result = { success: false, error: err.toString() };
   }
 
-  return ContentService
-    .createTextOutput(JSON.stringify(result))
-    .setMimeType(ContentService.MimeType.JSON);
+  return result;
 }
 
 // ── Users ──────────────────────────────────────────────────

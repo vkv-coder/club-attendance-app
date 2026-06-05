@@ -25,24 +25,34 @@ const LS = {
   del: (k)    => localStorage.removeItem(k),
 };
 
-// ── API helper ─────────────────────────────────────────────
-async function api(params) {
-  const url = new URL(GAS_URL);
-  Object.entries(params).forEach(([k, v]) => {
-    if (typeof v !== 'object') url.searchParams.set(k, v);
-  });
+// ── API helper (JSONP — bypasses GAS redirect CORS block) ──
+function api(params) {
+  return new Promise((resolve, reject) => {
+    const cbName = '__gasCb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const u = new URL(GAS_URL);
 
-  if (['addMeeting', 'saveAttendance'].includes(params.action)) {
-    const res = await fetch(GAS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-      redirect: 'follow',
+    Object.entries(params).forEach(([k, v]) => {
+      u.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
     });
-    return res.json();
-  }
-  const res = await fetch(url.toString(), { redirect: 'follow' });
-  return res.json();
+    u.searchParams.set('callback', cbName);
+
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 20000);
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      const s = document.getElementById(cbName);
+      if (s) s.remove();
+    }
+
+    window[cbName] = (data) => { cleanup(); resolve(data); };
+
+    const script = document.createElement('script');
+    script.id = cbName;
+    script.src = u.toString();
+    script.onerror = () => { cleanup(); reject(new Error('Failed to reach server')); };
+    document.head.appendChild(script);
+  });
 }
 
 // ── UI helpers ─────────────────────────────────────────────
@@ -122,8 +132,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
       toast(result.error || 'Access denied', 'error');
     }
   } catch (err) {
-    console.error('Login error:', err);
-    toast('Network error: ' + err.message, 'error');
+    toast('Error: ' + err.message, 'error');
   }
   hideLoader();
 });
