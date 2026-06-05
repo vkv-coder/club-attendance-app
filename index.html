@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1e40af" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ClubAttend" />
+  <title>Club Attendance App</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════
+     LOGIN SCREEN
+════════════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-logo">🏛️</div>
+  <div class="login-title">Club Attendance App</div>
+  <div class="login-sub">Sign in with your authorised email</div>
+
+  <div class="login-card">
+    <label for="login-email">Email Address</label>
+    <input type="email" id="login-email"
+           placeholder="you@example.com"
+           autocomplete="email" inputmode="email" />
+    <div style="margin-top:16px;">
+      <button class="btn btn-primary" id="login-btn">Sign In →</button>
+    </div>
+    <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:16px;">
+      Access is restricted to authorised users only.<br>
+      Contact your club admin for access.
+    </p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     MAIN APP SHELL
+════════════════════════════════════════════ -->
+<div id="app" style="display:none;">
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <button class="back-btn" title="Back">‹</button>
+    <h1>Home</h1>
+    <span class="club-badge">Club</span>
+    <span class="user-pill" id="user-pill" title="Tap to logout">User</span>
+  </div>
+
+  <!-- ── HOME PAGE ── -->
+  <div class="page active" id="page-home">
+    <div class="section-heading">Today</div>
+    <div id="home-date" style="font-size:18px;font-weight:600;margin-bottom:16px;color:var(--text2);"></div>
+
+    <!-- Stats -->
+    <div class="stats-strip">
+      <div class="stat-pill">
+        <span class="dot" style="background:var(--primary)"></span>
+        <span id="home-member-count">0</span> Members
+      </div>
+      <div class="stat-pill">
+        <span class="dot" style="background:var(--accent)"></span>
+        <span id="home-meeting-count">0</span> Meetings
+      </div>
+    </div>
+
+    <!-- Birthday banner -->
+    <div class="event-banner" id="bday-banner" style="display:none;">
+      <div class="banner-title">🎂 Birthdays Today</div>
+      <div id="bday-list"></div>
+    </div>
+
+    <!-- Recent meeting quick link -->
+    <div class="section-heading">Last Meeting</div>
+    <div class="card" id="recent-meeting-card" style="display:none;">
+      <div class="card-title" id="recent-meeting-name"></div>
+      <div class="card-sub" id="recent-meeting-date"></div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary" id="goto-recent-attendance">Open Attendance →</button>
+      </div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="section-heading">Quick Actions</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <button class="btn btn-ghost" onclick="navigateTo('page-meetings');renderMeetings();">
+        📅 Meetings
+      </button>
+      <button class="btn btn-ghost" onclick="navigateTo('page-reminder');renderReminder();">
+        📢 Reminder
+      </button>
+    </div>
+  </div>
+
+  <!-- ── MEETINGS PAGE ── -->
+  <div class="page" id="page-meetings">
+    <div class="section-heading">All Meetings</div>
+    <div id="meetings-list"></div>
+  </div>
+
+  <!-- FAB — Add meeting (visible only on meetings page) -->
+  <button class="fab" id="fab-add-meeting" title="Add Meeting"
+          style="display:none;">＋</button>
+
+  <!-- ── ATTENDANCE PAGE ── -->
+  <div class="page" id="page-attendance">
+    <div id="att-meeting-meta" style="font-size:13px;color:var(--text2);margin-bottom:12px;"></div>
+
+    <!-- Stats strip -->
+    <div class="stats-strip" id="att-stats">
+      <div class="stat-pill">
+        <span class="dot" style="background:var(--primary)"></span>
+        Members: <strong id="stat-members">0</strong>
+      </div>
+      <div class="stat-pill" id="stat-spouse-wrap">
+        <span class="dot" style="background:var(--success)"></span>
+        Spouses: <strong id="stat-spouses">0</strong>
+      </div>
+      <div class="stat-pill">
+        <span class="dot" style="background:var(--accent)"></span>
+        Kids: <strong id="stat-kids">0</strong>
+      </div>
+      <div class="stat-pill">
+        <span class="dot" style="background:var(--muted)"></span>
+        Total: <strong id="stat-total">0</strong>
+      </div>
+    </div>
+
+    <!-- Grid header -->
+    <div class="attendance-header" id="attendance-header">
+      <span>Member</span>
+      <span>Mbr</span>
+      <span>Sps</span>
+      <span>Kids</span>
+    </div>
+
+    <!-- Grid rows -->
+    <div id="attendance-grid"></div>
+
+    <!-- Save button -->
+    <div style="margin-top:20px;">
+      <button class="btn btn-success" id="save-attendance-btn">💾 Save Attendance</button>
+    </div>
+  </div>
+
+  <!-- ── REMINDER PAGE ── -->
+  <div class="page" id="page-reminder">
+    <div class="section-heading">Meeting Reminder</div>
+    <div class="form-group">
+      <label>Select Meeting</label>
+      <select id="reminder-meeting-sel"></select>
+    </div>
+
+    <div id="reminder-preview" style="display:none;">
+      <div class="section-heading">Preview</div>
+      <div class="reminder-box" id="reminder-text-box"></div>
+      <a id="send-reminder-wa" class="wa-btn btn"
+         target="_blank" rel="noopener"
+         style="display:flex;align-items:center;gap:8px;padding:13px 20px;
+                background:#25d366;color:#fff;border-radius:var(--radius-sm);
+                text-decoration:none;font-size:15px;font-weight:600;">
+        <span>📲</span> Share via WhatsApp
+      </a>
+    </div>
+  </div>
+
+  <!-- Bottom Nav -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-page="page-home">
+      <span class="icon">🏠</span> Home
+    </button>
+    <button class="nav-btn" data-page="page-meetings">
+      <span class="icon">📅</span> Meetings
+    </button>
+    <button class="nav-btn" data-page="page-reminder">
+      <span class="icon">📢</span> Reminder
+    </button>
+  </nav>
+</div>
+
+<!-- ════════════════════════════════════════════
+     ADD MEETING MODAL
+════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-add-meeting">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">➕ Add New Meeting</div>
+
+    <div class="form-group">
+      <label>Meeting Type *</label>
+      <select id="mtg-type">
+        <option value="">— Select —</option>
+        <option value="Fellowship">Fellowship</option>
+        <option value="Project">Project</option>
+        <option value="Speaker">Speaker</option>
+        <option value="MOM">MOM (Members Only)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Sub Name / Theme (optional)</label>
+      <input type="text" id="mtg-subname" placeholder="e.g. Vocational Visit, Fun Night…" />
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-group">
+        <label>Date *</label>
+        <input type="date" id="mtg-date" />
+      </div>
+      <div class="form-group">
+        <label>Time</label>
+        <input type="time" id="mtg-time" />
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Location / Venue</label>
+      <input type="text" id="mtg-location" placeholder="e.g. Rotary Hall" />
+    </div>
+
+    <div class="form-group">
+      <label>Remarks</label>
+      <input type="text" id="mtg-remarks" placeholder="Optional notes…" />
+    </div>
+
+    <button class="btn btn-primary" id="save-meeting-btn">Save Meeting</button>
+    <div style="margin-top:10px;">
+      <button class="btn btn-ghost" data-close-modal="modal-add-meeting">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     GLOBAL UI ELEMENTS
+════════════════════════════════════════════ -->
+<div id="toast"></div>
+
+<div id="loader">
+  <div class="spinner"></div>
+  <p id="loader-msg">Loading…</p>
+</div>
+
+<!-- FAB visibility logic -->
+<script>
+  // Show FAB only on meetings page
+  const _fab = document.getElementById('fab-add-meeting');
+  const _observer = new MutationObserver(() => {
+    const active = document.querySelector('.page.active');
+    _fab.style.display = (active && active.id === 'page-meetings') ? 'flex' : 'none';
+  });
+  _observer.observe(document.getElementById('app'), { subtree: true, attributes: true, attributeFilter: ['class'] });
+</script>
+
+<script src="app.js"></script>
+</body>
+</html>
