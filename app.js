@@ -122,7 +122,8 @@ document.getElementById('login-btn').addEventListener('click', async () => {
       toast(result.error || 'Access denied', 'error');
     }
   } catch (err) {
-    toast('Network error. Check connection.', 'error');
+    console.error('Login error:', err);
+    toast('Network error: ' + err.message, 'error');
   }
   hideLoader();
 });
