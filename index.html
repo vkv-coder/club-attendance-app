@@ -48,13 +48,15 @@
   <div class="top-bar">
     <button class="back-btn" title="Back">‹</button>
     <h1>Home</h1>
-    <span class="club-badge">Club</span>
+    <div class="top-bar-club">
+      <span class="club-badge" id="club-badge-name">Club</span>
+      <span class="club-id-chip" id="club-id-chip"></span>
+    </div>
     <span class="user-pill" id="user-pill" title="Tap to logout">User</span>
   </div>
 
   <!-- ── HOME PAGE ── -->
   <div class="page active" id="page-home">
-    <div id="home-club-name" class="home-club-name"></div>
     <div class="section-heading">Today</div>
     <div id="home-date" style="font-size:18px;font-weight:600;margin-bottom:16px;color:var(--text2);"></div>
 

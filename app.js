@@ -173,10 +173,15 @@ async function initApp() {
   if (cachedMeetings) State.meetings = cachedMeetings;
   if (cachedClubName) {
     State.clubName = cachedClubName;
-    document.querySelector('.club-badge').textContent = cachedClubName;
+    const cb = document.getElementById('club-badge-name');
+    if (cb) cb.textContent = cachedClubName;
   }
 
   document.getElementById('user-pill').textContent = State.user.name || State.user.email;
+
+  // Club ID chip — set immediately from user object
+  const _chip = document.getElementById('club-id-chip');
+  if (_chip && State.user?.clubId) _chip.textContent = State.user.clubId;
 
   if (hasCached) {
     // Show home right away — no blocking loader
@@ -199,7 +204,8 @@ async function initApp() {
       const settingsKey = Object.keys(settingsRes.settings)
         .find(k => k.trim().toLowerCase() === 'club name');
       State.clubName = (settingsKey ? settingsRes.settings[settingsKey] : '') || 'Club';
-      document.querySelector('.club-badge').textContent = State.clubName;
+      const cb = document.getElementById('club-badge-name');
+      if (cb) cb.textContent = State.clubName;
       LS.set('clubName', State.clubName);
       LS.set('settings', settingsRes.settings);
     }
@@ -267,9 +273,13 @@ function renderHome() {
     bdayBanner.style.display = 'none';
   }
 
-  // Club name — big and centered
-  const clubNameEl = document.getElementById('home-club-name');
-  if (clubNameEl) clubNameEl.textContent = State.clubName;
+  // Club name in top bar
+  const cb = document.getElementById('club-badge-name');
+  if (cb) cb.textContent = State.clubName;
+
+  // Club ID chip in top bar
+  const clubIdChip = document.getElementById('club-id-chip');
+  if (clubIdChip && State.user?.clubId) clubIdChip.textContent = State.user.clubId;
 
   // Admin-only section
   const role       = (State.user?.role || '').toLowerCase();
