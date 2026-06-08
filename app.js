@@ -153,12 +153,39 @@ async function initApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  showLoader('Loading data…');
+  // Step 1 — Load cache instantly so the app is usable immediately
+  const cachedMembers  = LS.get('members');
+  const cachedMeetings = LS.get('meetings');
+  const cachedClubName = LS.get('clubName');
+  const hasCached      = cachedMembers || cachedMeetings;
+
+  if (cachedMembers)  State.members  = cachedMembers;
+  if (cachedMeetings) State.meetings = cachedMeetings;
+  if (cachedClubName) {
+    State.clubName = cachedClubName;
+    document.querySelector('.club-badge').textContent = cachedClubName;
+  }
+
+  document.getElementById('user-pill').textContent = State.user.name || State.user.email;
+
+  if (hasCached) {
+    // Show home right away — no blocking loader
+    navigateTo('page-home');
+    renderHome();
+  } else {
+    showLoader('Loading data…');
+  }
+
+  // Step 2 — Fetch all data in parallel in background
   try {
-    // Load settings
-    const settingsRes = await api({ action: 'getSettings' });
+    const [settingsRes, membersRes, meetingsRes, eventsRes] = await Promise.all([
+      api({ action: 'getSettings' }),
+      api({ action: 'getMembers' }),
+      api({ action: 'getMeetings' }),
+      api({ action: 'getTodayEvents' }),
+    ]);
+
     if (settingsRes.success) {
-      // Settings keys may have trailing spaces — find club name by trimming
       const settingsKey = Object.keys(settingsRes.settings)
         .find(k => k.trim().toLowerCase() === 'club name');
       State.clubName = (settingsKey ? settingsRes.settings[settingsKey] : '') || 'Club';
@@ -166,42 +193,34 @@ async function initApp() {
       LS.set('clubName', State.clubName);
       LS.set('settings', settingsRes.settings);
     }
-
-    // Load members
-    const membersRes = await api({ action: 'getMembers' });
     if (membersRes.success) {
       State.members = membersRes.members;
       LS.set('members', State.members);
     }
-
-    // Load meetings
-    const meetingsRes = await api({ action: 'getMeetings' });
     if (meetingsRes.success) {
       State.meetings = meetingsRes.meetings;
       LS.set('meetings', State.meetings);
     }
-
-    // Today's events
-    const eventsRes = await api({ action: 'getTodayEvents' });
     if (eventsRes.success) {
       State.todayEvents = eventsRes;
     }
 
+    // Silently refresh home with latest data
+    if (window._currentPage === 'page-home') renderHome();
+
   } catch (err) {
-    // Try from cache
-    State.members  = LS.get('members')  || [];
-    State.meetings = LS.get('meetings') || [];
-    State.clubName = LS.get('clubName') || 'Club';
-    document.querySelector('.club-badge').textContent = State.clubName;
-    toast('Offline — using cached data', 'error');
+    if (!hasCached) {
+      State.members  = [];
+      State.meetings = [];
+      toast('Cannot connect — check your network', 'error');
+    }
   }
 
-  // Update user pill
-  document.getElementById('user-pill').textContent = State.user.name || State.user.email;
-
   hideLoader();
-  navigateTo('page-home');
-  renderHome();
+  if (!hasCached) {
+    navigateTo('page-home');
+    renderHome();
+  }
 }
 
 // ── ONLINE / OFFLINE ───────────────────────────────────────
