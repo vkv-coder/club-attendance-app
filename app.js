@@ -645,7 +645,9 @@ function buildAnalysisMessage(member, monthStr, clubName) {
   const lines = [
     `Dear ${member.memberName},`,
     '',
-    `Attendance Report - ${monthStr}`,
+    `━━━ ATTENDANCE SUMMARY ━━━`,
+    `    ${monthStr}`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━`,
     ''
   ];
 
@@ -654,12 +656,15 @@ function buildAnalysisMessage(member, monthStr, clubName) {
   } else {
     member.attendance.forEach(att => {
       lines.push(
-        `${att.date} | ${att.type} | Member: ${att.memberPresent ? 'Y' : 'N'} | Spouse: ${att.spousePresent ? 'Y' : 'N'}`
+        `${att.date} | ${att.type}`,
+        `  Member : ${att.memberPresent ? 'Yes' : 'No'}`,
+        `  Spouse : ${att.spousePresent ? 'Yes' : 'No'}`,
+        ''
       );
     });
   }
 
-  lines.push('', 'Regards,', clubName);
+  lines.push('Regards,', clubName);
   return lines.join('\n');
 }
 
