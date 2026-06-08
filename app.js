@@ -157,7 +157,10 @@ async function initApp() {
     // Load settings
     const settingsRes = await api({ action: 'getSettings' });
     if (settingsRes.success) {
-      State.clubName = settingsRes.settings['club name'] || settingsRes.settings['clubName'] || 'Club';
+      // Settings keys may have trailing spaces — find club name by trimming
+      const settingsKey = Object.keys(settingsRes.settings)
+        .find(k => k.trim().toLowerCase() === 'club name');
+      State.clubName = (settingsKey ? settingsRes.settings[settingsKey] : '') || 'Club';
       document.querySelector('.club-badge').textContent = State.clubName;
       LS.set('clubName', State.clubName);
       LS.set('settings', settingsRes.settings);
