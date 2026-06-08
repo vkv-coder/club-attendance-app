@@ -342,15 +342,25 @@ document.querySelectorAll('[data-close-modal]').forEach(btn => {
   btn.addEventListener('click', () => closeModal(btn.dataset.closeModal));
 });
 
+document.getElementById('mtg-type').addEventListener('change', function () {
+  const otherInput = document.getElementById('mtg-type-other');
+  otherInput.style.display = this.value === 'Other' ? '' : 'none';
+  if (this.value !== 'Other') otherInput.value = '';
+});
+
 document.getElementById('save-meeting-btn').addEventListener('click', async () => {
   const date    = document.getElementById('mtg-date').value;
   const time    = document.getElementById('mtg-time').value;
-  const type    = document.getElementById('mtg-type').value;
+  const sel     = document.getElementById('mtg-type').value;
+  const type    = sel === 'Other'
+    ? document.getElementById('mtg-type-other').value.trim()
+    : sel;
   const subName = document.getElementById('mtg-subname').value.trim();
   const loc     = document.getElementById('mtg-location').value.trim();
   const remarks = document.getElementById('mtg-remarks').value.trim();
 
-  if (!date || !type) { toast('Date and type required', 'error'); return; }
+  if (!date || !sel) { toast('Date and type required', 'error'); return; }
+  if (sel === 'Other' && !type) { toast('Please specify meeting type', 'error'); return; }
 
   showLoader('Saving meeting…');
   try {
