@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#1e40af" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ClubAttend" />
   <title>Club Attendance App</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png" />
 </head>
 <body>
 
@@ -93,6 +93,20 @@
         📢 Reminder
       </button>
     </div>
+
+    <!-- Admin actions (shown only for Admin role) -->
+    <div class="section-heading" id="admin-section-heading" style="display:none;">Admin</div>
+    <div id="admin-actions" style="display:none;">
+      <button class="btn btn-ghost" onclick="openAnalysisPicker();">
+        📊 Generate Analysis
+      </button>
+    </div>
+  </div>
+
+  <!-- ── ANALYSIS PAGE ── -->
+  <div class="page" id="page-analysis">
+    <div id="analysis-meta" style="font-size:13px;color:var(--text2);margin-bottom:16px;"></div>
+    <div id="analysis-list"></div>
   </div>
 
   <!-- ── MEETINGS PAGE ── -->
@@ -229,6 +243,45 @@
     <button class="btn btn-primary" id="save-meeting-btn">Save Meeting</button>
     <div style="margin-top:10px;">
       <button class="btn btn-ghost" data-close-modal="modal-add-meeting">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     ANALYSIS PICKER MODAL
+════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-analysis-picker">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📊 Generate Analysis</div>
+
+    <div class="form-group">
+      <label>Month</label>
+      <select id="analysis-month">
+        <option value="1">January</option>
+        <option value="2">February</option>
+        <option value="3">March</option>
+        <option value="4">April</option>
+        <option value="5">May</option>
+        <option value="6">June</option>
+        <option value="7">July</option>
+        <option value="8">August</option>
+        <option value="9">September</option>
+        <option value="10">October</option>
+        <option value="11">November</option>
+        <option value="12">December</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Year</label>
+      <input type="number" id="analysis-year" min="2020" max="2035"
+             inputmode="numeric" placeholder="e.g. 2025" />
+    </div>
+
+    <button class="btn btn-primary" id="generate-analysis-btn">Generate →</button>
+    <div style="margin-top:10px;">
+      <button class="btn btn-ghost" data-close-modal="modal-analysis-picker">Cancel</button>
     </div>
   </div>
 </div>

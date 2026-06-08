@@ -98,11 +98,17 @@ const pageTitles = {
   'page-meetings':  'Meetings',
   'page-attendance':'Attendance',
   'page-reminder':  'Reminders',
+  'page-analysis':  'Analysis',
 };
 
 // ── Back button ────────────────────────────────────────────
 document.querySelector('.back-btn').addEventListener('click', () => {
-  navigateTo('page-meetings', 'Meetings');
+  if (window._currentPage === 'page-analysis') {
+    navigateTo('page-home');
+    renderHome();
+  } else {
+    navigateTo('page-meetings');
+  }
 });
 
 // ── Bottom nav ─────────────────────────────────────────────
@@ -227,6 +233,13 @@ function renderHome() {
   } else {
     bdayBanner.style.display = 'none';
   }
+
+  // Admin-only section
+  const isAdmin = State.user && (State.user.role || '').toLowerCase() === 'admin';
+  const _ah = document.getElementById('admin-section-heading');
+  const _aa = document.getElementById('admin-actions');
+  if (_ah) _ah.style.display = isAdmin ? '' : 'none';
+  if (_aa) _aa.style.display = isAdmin ? '' : 'none';
 
   // Recent meeting
   const recent = [...State.meetings].sort((a, b) =>
@@ -546,6 +559,106 @@ document.getElementById('user-pill').addEventListener('click', () => {
     document.getElementById('login-email').value = '';
   }
 });
+
+// ── MONTHLY ANALYSIS ───────────────────────────────────────
+function openAnalysisPicker() {
+  const now = new Date();
+  document.getElementById('analysis-month').value = now.getMonth() + 1;
+  document.getElementById('analysis-year').value  = now.getFullYear();
+  openModal('modal-analysis-picker');
+}
+
+document.getElementById('generate-analysis-btn')?.addEventListener('click', async () => {
+  const month = document.getElementById('analysis-month').value;
+  const year  = document.getElementById('analysis-year').value.trim();
+
+  if (!year || isNaN(year)) { toast('Enter a valid year', 'error'); return; }
+
+  closeModal('modal-analysis-picker');
+  showLoader('Generating analysis…');
+
+  try {
+    const res = await api({ action: 'getMonthlyAnalysis', month, year });
+    if (res.success) {
+      navigateTo('page-analysis', res.monthName + ' ' + res.year + ' Analysis');
+      renderAnalysisPage(res);
+    } else {
+      toast(res.error || 'Error generating analysis', 'error');
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+  hideLoader();
+});
+
+function renderAnalysisPage(data) {
+  const clubName = State.clubName;
+  const monthStr = data.monthName + ' ' + data.year;
+  const meta     = document.getElementById('analysis-meta');
+  const list     = document.getElementById('analysis-list');
+
+  if (!data.meetings || data.meetings.length === 0) {
+    meta.textContent = '';
+    list.innerHTML = `<div class="empty-state"><div class="icon">📅</div><p>No meetings found for ${monthStr}.</p></div>`;
+    return;
+  }
+
+  meta.textContent = data.meetings.length + ' meeting(s) in ' + monthStr;
+
+  list.innerHTML = data.memberReports.map(member => {
+    if (!member.memberName) return '';
+
+    const mobile  = member.mobile.replace(/\D/g, '');
+    const message = buildAnalysisMessage(member, monthStr, clubName);
+    const waLink  = mobile
+      ? `https://wa.me/${mobile}?text=${encodeURIComponent(message)}`
+      : null;
+
+    const rows = member.attendance.length
+      ? member.attendance.map(att => `
+          <div class="analysis-att-row">
+            <span class="analysis-date">${att.dateShort}</span>
+            <span class="analysis-type">${att.type}</span>
+            <span class="att-badge ${att.memberPresent ? 'att-yes' : 'att-no'}">M:${att.memberPresent ? 'Y' : 'N'}</span>
+            <span class="att-badge ${att.spousePresent ? 'att-yes' : 'att-no'}">S:${att.spousePresent ? 'Y' : 'N'}</span>
+          </div>`).join('')
+      : `<div style="color:var(--muted);font-size:12px;padding:4px 0;">No applicable meetings</div>`;
+
+    return `
+      <div class="analysis-card">
+        <div class="analysis-card-header">
+          <span class="analysis-member-name">${member.memberName}</span>
+          ${member.isBoardMember ? '<span class="analysis-board-badge">Board</span>' : ''}
+        </div>
+        <div class="analysis-att-list">${rows}</div>
+        ${waLink
+          ? `<a href="${waLink}" class="analysis-wa-btn" target="_blank" rel="noopener">📲 Send WhatsApp</a>`
+          : `<span class="analysis-no-mobile">No mobile number</span>`}
+      </div>`;
+  }).join('');
+}
+
+function buildAnalysisMessage(member, monthStr, clubName) {
+  const lines = [
+    `Dear ${member.memberName},`,
+    '',
+    `Attendance Report - ${monthStr}`,
+    ''
+  ];
+
+  if (member.attendance.length === 0) {
+    lines.push('No applicable meetings this month.');
+  } else {
+    member.attendance.forEach(att => {
+      lines.push(
+        `${att.date} | ${att.type} | Member: ${att.memberPresent ? 'Y' : 'N'} | Spouse: ${att.spousePresent ? 'Y' : 'N'}`
+      );
+    });
+  }
+
+  lines.push('', 'Regards,', clubName);
+  return lines.join('\n');
+}
 
 // ── STARTUP ────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {

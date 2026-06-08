@@ -49,6 +49,9 @@ function handleRequest(e) {
         break;
       }
       case 'getTodayEvents': result = getTodayEvents(); break;
+      case 'getMonthlyAnalysis':
+        result = getMonthlyAnalysis(params.month || postData.month, params.year || postData.year);
+        break;
       default:
         result = { success: false, error: 'Unknown action: ' + action };
     }
@@ -255,6 +258,109 @@ function saveAttendance(payload) {
   });
 
   return { success: true, message: 'Attendance saved.' };
+}
+
+// ── Monthly Attendance Analysis ────────────────────────────
+function getMonthlyAnalysis(month, year) {
+  month = parseInt(month);
+  year  = parseInt(year);
+  if (!month || !year) return { success: false, error: 'month and year required' };
+
+  // Step 1: Meetings sheet — col A(0)=MeetingID, col B(1)=Date, col D(3)=MeetingType
+  var meetSheet = ss.getSheetByName('Meetings');
+  var meetData  = meetSheet.getDataRange().getValues();
+  var tz        = Session.getScriptTimeZone();
+
+  var monthMeetings = [];
+  for (var i = 1; i < meetData.length; i++) {
+    var row = meetData[i];
+    if (!row[0]) continue;
+    var dateVal = row[1];
+    var d = (dateVal instanceof Date) ? dateVal : new Date(dateVal);
+    if (isNaN(d.getTime())) continue;
+    if ((d.getMonth() + 1) === month && d.getFullYear() === year) {
+      monthMeetings.push({
+        meetingId: row[0].toString(),
+        date:      Utilities.formatDate(d, tz, 'dd-MMM-yyyy'),
+        dateShort: Utilities.formatDate(d, tz, 'dd MMM'),
+        type:      (row[3] || '').toString(),
+        ts:        d.getTime()
+      });
+    }
+  }
+  monthMeetings.sort(function(a, b) { return a.ts - b.ts; });
+
+  // Step 2: Attendance sheet — col B(1)=MeetingID, col C(2)=MemberID, col D(3)=MemberPresent, col E(4)=SpousePresent
+  var attMap = {};
+  if (monthMeetings.length > 0) {
+    var inScope = {};
+    monthMeetings.forEach(function(m) { inScope[m.meetingId] = true; });
+
+    var attSheet = ss.getSheetByName('Attendance');
+    var attData  = attSheet.getDataRange().getValues();
+    for (var j = 1; j < attData.length; j++) {
+      var ar  = attData[j];
+      var mid = (ar[1] || '').toString();
+      if (!inScope[mid]) continue;
+      var memId = (ar[2] || '').toString();
+      if (!attMap[mid]) attMap[mid] = {};
+      attMap[mid][memId] = {
+        memberPresent: ar[3] === true || ar[3] === 'TRUE',
+        spousePresent: ar[4] === true || ar[4] === 'TRUE'
+      };
+    }
+  }
+
+  // Step 3: MemberMaster — col A(0)=MemberID, col B(1)=Name, col F(5)=Mobile, col O(14)=BoardMember
+  var memSheet = ss.getSheetByName('MemberMaster');
+  var memData  = memSheet.getDataRange().getValues();
+
+  var memberReports = [];
+  for (var k = 1; k < memData.length; k++) {
+    var mr = memData[k];
+    if (!mr[0]) continue;
+
+    var memberId      = mr[0].toString();
+    var memberName    = (mr[1] || '').toString().trim();
+    var mobile        = (mr[5] || '').toString().replace(/\s/g, '');
+    var isBoardMember = (mr[14] || '').toString().toUpperCase() === 'Y';
+
+    var attendance = monthMeetings
+      .filter(function(m) { return isBoardMember || m.type !== 'Board'; })
+      .map(function(m) {
+        var rec = (attMap[m.meetingId] || {})[memberId] || { memberPresent: false, spousePresent: false };
+        return {
+          meetingId:     m.meetingId,
+          date:          m.date,
+          dateShort:     m.dateShort,
+          type:          m.type,
+          memberPresent: rec.memberPresent,
+          spousePresent: rec.spousePresent
+        };
+      });
+
+    memberReports.push({
+      memberId:      memberId,
+      memberName:    memberName,
+      mobile:        mobile,
+      isBoardMember: isBoardMember,
+      attendance:    attendance
+    });
+  }
+
+  var monthNames = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+
+  return {
+    success:       true,
+    month:         month,
+    year:          year,
+    monthName:     monthNames[month - 1],
+    meetings:      monthMeetings.map(function(m) {
+                     return { meetingId: m.meetingId, date: m.date, type: m.type };
+                   }),
+    memberReports: memberReports
+  };
 }
 
 // ── Today's Birthdays / Anniversaries ─────────────────────
