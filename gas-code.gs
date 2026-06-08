@@ -41,6 +41,16 @@ function handleRequest(e) {
         result = addMeeting(p);
         break;
       }
+      case 'updateMeeting': {
+        const p = Object.keys(postData).length ? postData : params;
+        result = updateMeeting(p);
+        break;
+      }
+      case 'deleteMeeting': {
+        const p = Object.keys(postData).length ? postData : params;
+        result = deleteMeeting(p.meetingId);
+        break;
+      }
       case 'getAttendance':  result = getAttendance(params.meetingId || postData.meetingId); break;
       case 'saveAttendance': {
         const p = Object.keys(postData).length ? postData : params;
@@ -177,6 +187,39 @@ function addMeeting(payload) {
   ]);
 
   return { success: true, meetingId };
+}
+
+function updateMeeting(payload) {
+  const sheet = ss.getSheetByName('Meetings');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idIdx = headers.indexOf('MeetingID');
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idIdx] && data[i][idIdx].toString() === payload.meetingId) {
+      sheet.getRange(i + 1, 2).setValue(payload.meetingDate);
+      sheet.getRange(i + 1, 3).setValue(payload.meetingTime);
+      sheet.getRange(i + 1, 4).setValue(payload.meetingType);
+      sheet.getRange(i + 1, 5).setValue(payload.meetingSubName || '');
+      sheet.getRange(i + 1, 6).setValue(payload.location || '');
+      sheet.getRange(i + 1, 7).setValue(payload.remarks || '');
+      return { success: true };
+    }
+  }
+  return { success: false, error: 'Meeting not found' };
+}
+
+function deleteMeeting(meetingId) {
+  const sheet = ss.getSheetByName('Meetings');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idIdx = headers.indexOf('MeetingID');
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][idIdx] && data[i][idIdx].toString() === meetingId) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false, error: 'Meeting not found' };
 }
 
 // ── Attendance ─────────────────────────────────────────────

@@ -257,6 +257,63 @@
 </div>
 
 <!-- ════════════════════════════════════════════
+     EDIT MEETING MODAL
+════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-edit-meeting">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">✏️ Edit Meeting</div>
+    <input type="hidden" id="edit-mtg-id" />
+
+    <div class="form-group">
+      <label>Meeting Type *</label>
+      <select id="edit-mtg-type">
+        <option value="">— Select —</option>
+        <option value="Fellowship">Fellowship</option>
+        <option value="Board">Board Meeting</option>
+        <option value="Project">Project</option>
+        <option value="Speaker">Speaker</option>
+        <option value="MOM">MOM (Members Only)</option>
+        <option value="Other">Other</option>
+      </select>
+      <input type="text" id="edit-mtg-type-other" placeholder="Specify meeting type…"
+             style="display:none;margin-top:8px;" />
+    </div>
+
+    <div class="form-group">
+      <label>Sub Name / Theme (optional)</label>
+      <input type="text" id="edit-mtg-subname" placeholder="e.g. Vocational Visit, Fun Night…" />
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-group">
+        <label>Date *</label>
+        <input type="date" id="edit-mtg-date" />
+      </div>
+      <div class="form-group">
+        <label>Time</label>
+        <input type="time" id="edit-mtg-time" />
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Location / Venue</label>
+      <input type="text" id="edit-mtg-location" placeholder="e.g. Rotary Hall" />
+    </div>
+
+    <div class="form-group">
+      <label>Remarks</label>
+      <input type="text" id="edit-mtg-remarks" placeholder="Optional notes…" />
+    </div>
+
+    <button class="btn btn-primary" id="update-meeting-btn">Update Meeting</button>
+    <div style="margin-top:10px;">
+      <button class="btn btn-ghost" data-close-modal="modal-edit-meeting">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
      ANALYSIS PICKER MODAL
 ════════════════════════════════════════════ -->
 <div class="modal-overlay" id="modal-analysis-picker">

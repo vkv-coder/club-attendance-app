@@ -305,7 +305,10 @@ function renderMeetings() {
         <div class="meeting-name">${m.MeetingType}${m.MeetingSubName ? ' — ' + m.MeetingSubName : ''}</div>
         <div class="meeting-meta">${m.MeetingDate}${m.MeetingTime ? ' · ' + m.MeetingTime : ''}${m.Location ? ' · ' + m.Location : ''}</div>
       </div>
-      <div class="meeting-chevron">›</div>
+      <div class="meeting-actions" onclick="event.stopPropagation()">
+        <button class="mtg-edit-btn" data-id="${m.MeetingID}" title="Edit">✏️</button>
+        <button class="mtg-del-btn"  data-id="${m.MeetingID}" title="Delete">🗑️</button>
+      </div>
     </div>
   `).join('');
 
@@ -315,6 +318,92 @@ function renderMeetings() {
       if (m) openAttendance(m);
     });
   });
+
+  list.querySelectorAll('.mtg-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const m = State.meetings.find(x => x.MeetingID === btn.dataset.id);
+      if (m) openEditMeeting(m);
+    });
+  });
+
+  list.querySelectorAll('.mtg-del-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const m = State.meetings.find(x => x.MeetingID === btn.dataset.id);
+      if (m) confirmDeleteMeeting(m);
+    });
+  });
+}
+
+// ── EDIT / DELETE MEETING ──────────────────────────────────
+function openEditMeeting(m) {
+  const knownTypes = ['Fellowship','Board','Project','Speaker','MOM'];
+  const isOther = !knownTypes.includes(m.MeetingType);
+
+  document.getElementById('edit-mtg-id').value       = m.MeetingID;
+  document.getElementById('edit-mtg-type').value     = isOther ? 'Other' : (m.MeetingType || '');
+  document.getElementById('edit-mtg-type-other').style.display = isOther ? '' : 'none';
+  document.getElementById('edit-mtg-type-other').value = isOther ? m.MeetingType : '';
+  document.getElementById('edit-mtg-subname').value  = m.MeetingSubName || '';
+  document.getElementById('edit-mtg-date').value     = m.MeetingDate || '';
+  document.getElementById('edit-mtg-time').value     = m.MeetingTime || '';
+  document.getElementById('edit-mtg-location').value = m.Location || '';
+  document.getElementById('edit-mtg-remarks').value  = m.Remarks || '';
+  openModal('modal-edit-meeting');
+}
+
+document.getElementById('edit-mtg-type').addEventListener('change', function () {
+  const o = document.getElementById('edit-mtg-type-other');
+  o.style.display = this.value === 'Other' ? '' : 'none';
+  if (this.value !== 'Other') o.value = '';
+});
+
+document.getElementById('update-meeting-btn').addEventListener('click', async () => {
+  const id  = document.getElementById('edit-mtg-id').value;
+  const date = document.getElementById('edit-mtg-date').value;
+  const sel  = document.getElementById('edit-mtg-type').value;
+  const type = sel === 'Other'
+    ? document.getElementById('edit-mtg-type-other').value.trim()
+    : sel;
+  if (!date || !sel) { toast('Date and type required', 'error'); return; }
+  if (sel === 'Other' && !type) { toast('Please specify meeting type', 'error'); return; }
+
+  showLoader('Updating meeting…');
+  const res = await api({
+    action: 'updateMeeting',
+    meetingId:   id,
+    meetingDate: date,
+    meetingTime: document.getElementById('edit-mtg-time').value,
+    meetingType: type,
+    meetingSubName: document.getElementById('edit-mtg-subname').value.trim(),
+    location:    document.getElementById('edit-mtg-location').value.trim(),
+    remarks:     document.getElementById('edit-mtg-remarks').value.trim(),
+  });
+  hideLoader();
+  if (res.success) {
+    toast('Meeting updated ✓', 'success');
+    closeModal('modal-edit-meeting');
+    const mRes = await api({ action: 'getMeetings' });
+    if (mRes.success) { State.meetings = mRes.meetings; LS.set('meetings', State.meetings); }
+    renderMeetings();
+  } else {
+    toast(res.error || 'Update failed', 'error');
+  }
+});
+
+async function confirmDeleteMeeting(m) {
+  const label = m.MeetingType + (m.MeetingSubName ? ' — ' + m.MeetingSubName : '') + ' (' + m.MeetingDate + ')';
+  if (!confirm(`Delete meeting:\n${label}\n\nThis cannot be undone.`)) return;
+  showLoader('Deleting meeting…');
+  const res = await api({ action: 'deleteMeeting', meetingId: m.MeetingID });
+  hideLoader();
+  if (res.success) {
+    toast('Meeting deleted', 'success');
+    State.meetings = State.meetings.filter(x => x.MeetingID !== m.MeetingID);
+    LS.set('meetings', State.meetings);
+    renderMeetings();
+  } else {
+    toast(res.error || 'Delete failed', 'error');
+  }
 }
 
 // ── ADD MEETING MODAL ──────────────────────────────────────
