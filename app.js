@@ -440,7 +440,7 @@ function renderAttendanceGrid(isMOM, isBoard) {
   const grid      = document.getElementById('attendance-grid');
   const header    = document.getElementById('attendance-header');
   const attLocked = !State.meetingStarted;
-  const cols      = isBoard ? '1fr 44px 44px' : '1fr 44px 44px 48px';
+  const cols      = (isBoard || isMOM) ? '1fr 44px 44px' : '1fr 44px 44px 48px';
 
   const boardFiltered  = State.members.filter(m => m.boardMember);
   const displayMembers = isBoard
@@ -452,7 +452,7 @@ function renderAttendanceGrid(isMOM, isBoard) {
   if (isBoard) {
     header.innerHTML = `<span>Board Member</span><span>Conf</span><span>Att</span>`;
   } else if (isMOM) {
-    header.innerHTML = `<span>Member</span><span>Conf</span><span>Att</span><span>Kids</span>`;
+    header.innerHTML = `<span>Member</span><span>Conf</span><span>Att</span>`;
   } else {
     header.innerHTML = `<span>Member / Spouse</span><span>Conf</span><span>Att</span><span>Kids</span>`;
   }
@@ -470,7 +470,7 @@ function renderAttendanceGrid(isMOM, isBoard) {
              data-kind="mconf" data-id="${m.memberId}">${rec.memberConfirmed ? '✅' : '⬜'}</div>
         <div class="tap-cell ${rec.memberPresent ? 'present' : 'absent'}${attLocked ? ' att-locked' : ''}"
              data-kind="matt" data-id="${m.memberId}">${attLocked ? '🔒' : (rec.memberPresent ? '✅' : '⬜')}</div>
-        ${!isBoard ? `<div class="kids-cell"><input type="number" class="kids-count-input"
+        ${(!isBoard && !isMOM) ? `<div class="kids-cell"><input type="number" class="kids-count-input"
           min="0" max="20" value="${rec.kidsCount}" data-id="${m.memberId}" inputmode="numeric"/></div>` : ''}
       </div>`;
 
@@ -539,7 +539,7 @@ function updateAttendanceStats(isMOM, isBoard) {
     if (boardIds && !boardIds.has(id)) return;
     if (r.memberPresent)   members++;
     if (!isMOM && !isBoard && r.spousePresent) spouses++;
-    if (!isBoard) kids += (r.kidsCount || 0);
+    if (!isBoard && !isMOM) kids += (r.kidsCount || 0);
     if (r.memberConfirmed) confirmed++;
     if (!isMOM && !isBoard && r.spouseConfirmed) confirmed++;
   });
@@ -554,7 +554,7 @@ function updateAttendanceStats(isMOM, isBoard) {
   const spouseWrap = document.getElementById('stat-spouse-wrap');
   const kidsWrap   = document.getElementById('stat-kids-wrap');
   if (spouseWrap) spouseWrap.style.display = (isMOM || isBoard) ? 'none' : '';
-  if (kidsWrap)   kidsWrap.style.display   = isBoard ? 'none' : '';
+  if (kidsWrap)   kidsWrap.style.display   = (isBoard || isMOM) ? 'none' : '';
 }
 
 // Save attendance
