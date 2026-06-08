@@ -53,36 +53,46 @@ body {
   position: sticky; top: 0; z-index: 100;
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
-  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.top-bar-left {
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0;
 }
 .top-bar .back-btn {
   background: none; border: none; color: var(--text2);
   font-size: 20px; cursor: pointer; padding: 4px;
-  display: none;
+  display: none; flex-shrink: 0;
 }
 .top-bar .back-btn.visible { display: block; }
 .top-bar h1 {
-  font-size: 16px; font-weight: 600; flex: 1;
+  font-size: 15px; font-weight: 600;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.top-bar .club-badge {
-  font-size: 15px; font-weight: 700; color: var(--accent);
-  background: rgba(245,158,11,0.12);
-  padding: 4px 12px; border-radius: 99px;
-  white-space: nowrap; letter-spacing: 0.02em;
-  text-align: center;
 }
 .top-bar-club {
   display: flex; flex-direction: column;
-  align-items: center; gap: 2px;
+  align-items: center; text-align: center; gap: 1px;
+}
+.top-bar .club-badge {
+  font-size: 14px; font-weight: 700; color: var(--accent);
+  background: rgba(245,158,11,0.12);
+  padding: 3px 10px; border-radius: 99px;
+  max-width: 160px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  letter-spacing: 0.02em;
 }
 .club-id-chip {
   font-size: 10px; font-weight: 600;
   color: var(--text2);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.05em;
   line-height: 1;
+}
+.top-bar .user-pill {
+  justify-self: end;
 }
 
 /* ── Bottom Nav ── */
