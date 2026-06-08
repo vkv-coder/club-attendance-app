@@ -257,6 +257,10 @@ function renderHome() {
     bdayBanner.style.display = 'none';
   }
 
+  // Club name — big and centered
+  const clubNameEl = document.getElementById('home-club-name');
+  if (clubNameEl) clubNameEl.textContent = State.clubName;
+
   // Admin-only section
   const isAdmin = State.user && (State.user.role || '').toLowerCase() === 'admin';
   const _ah = document.getElementById('admin-section-heading');
@@ -388,7 +392,8 @@ async function openAttendance(meeting) {
     meeting.MeetingDate + (meeting.MeetingTime ? ' · ' + meeting.MeetingTime : '') +
     (meeting.Location ? ' · ' + meeting.Location : '');
 
-  const isMOM = meeting.MeetingType === 'MOM';
+  const isMOM   = meeting.MeetingType === 'MOM';
+  const isBoard = meeting.MeetingType === 'Board';
 
   showLoader('Loading attendance…');
   let existingMap = {};
@@ -412,27 +417,49 @@ async function openAttendance(meeting) {
     };
   });
 
-  renderAttendanceGrid(isMOM);
-  updateAttendanceStats(isMOM);
+  renderAttendanceGrid(isMOM, isBoard);
+  updateAttendanceStats(isMOM, isBoard);
 }
 
-function renderAttendanceGrid(isMOM) {
-  const grid = document.getElementById('attendance-grid');
-
-  // Header
+function renderAttendanceGrid(isMOM, isBoard) {
+  const grid   = document.getElementById('attendance-grid');
   const header = document.getElementById('attendance-header');
-  header.innerHTML = `
-    <span>Member</span>
-    <span>Mbr</span>
-    <span class="${isMOM ? 'hidden-col' : ''}">Sps</span>
-    <span>Kids</span>
-  `;
 
-  grid.innerHTML = State.members.map(m => {
-    const rec = State.attendanceEdited[m.memberId];
+  // For board meetings: only show board members; fallback to all if field not yet in cache
+  const displayMembers = isBoard
+    ? (State.members.filter(m => m.boardMember).length > 0
+        ? State.members.filter(m => m.boardMember)
+        : State.members)
+    : State.members;
+
+  if (isBoard) {
+    header.style.gridTemplateColumns = '1fr 44px';
+    header.innerHTML = '<span>Board Member</span><span>Mbr</span>';
+  } else {
+    header.style.gridTemplateColumns = '';
+    header.innerHTML = `
+      <span>Member</span>
+      <span>Mbr</span>
+      <span class="${isMOM ? 'hidden-col' : ''}">Sps</span>
+      <span>Kids</span>
+    `;
+  }
+
+  grid.innerHTML = displayMembers.map(m => {
+    const rec      = State.attendanceEdited[m.memberId] || { memberPresent: false, spousePresent: false, kidsCount: 0 };
     const mPresent = rec.memberPresent;
     const sPresent = rec.spousePresent;
-    const kids     = rec.kidsCount;
+
+    if (isBoard) {
+      return `
+      <div class="attendance-row" data-id="${m.memberId}" style="grid-template-columns:1fr 44px;">
+        <div class="member-name-cell" title="${m.memberName}">${m.memberName}</div>
+        <div class="tap-cell ${mPresent ? 'present' : 'absent'}"
+             data-type="member" data-id="${m.memberId}">
+          ${mPresent ? '✅' : '⬜'}
+        </div>
+      </div>`;
+    }
 
     return `
     <div class="attendance-row" data-id="${m.memberId}">
@@ -447,18 +474,19 @@ function renderAttendanceGrid(isMOM) {
       </div>
       <div class="kids-cell" data-id="${m.memberId}">
         <input type="number" class="kids-count-input"
-               min="0" max="20" value="${kids}"
+               min="0" max="20" value="${rec.kidsCount}"
                data-id="${m.memberId}" inputmode="numeric" />
       </div>
     </div>`;
   }).join('');
 
-  // Tap events for member/spouse cells
+  // Tap events
   grid.querySelectorAll('.tap-cell:not(.hidden-col)').forEach(cell => {
     cell.addEventListener('click', () => {
       const id   = cell.dataset.id;
-      const type = cell.dataset.type; // 'member' | 'spouse'
+      const type = cell.dataset.type;
       const rec  = State.attendanceEdited[id];
+      if (!rec) return;
       if (type === 'member') {
         rec.memberPresent = !rec.memberPresent;
         cell.classList.toggle('present', rec.memberPresent);
@@ -470,35 +498,43 @@ function renderAttendanceGrid(isMOM) {
         cell.classList.toggle('absent',  !rec.spousePresent);
         cell.textContent = rec.spousePresent ? '✅' : '⬜';
       }
-      updateAttendanceStats(isMOM);
+      updateAttendanceStats(isMOM, isBoard);
     });
   });
 
-  // Kids count
+  // Kids count (non-board only)
   grid.querySelectorAll('.kids-count-input').forEach(input => {
     input.addEventListener('change', () => {
-      const id = input.dataset.id;
-      State.attendanceEdited[id].kidsCount = parseInt(input.value) || 0;
-      updateAttendanceStats(isMOM);
+      State.attendanceEdited[input.dataset.id].kidsCount = parseInt(input.value) || 0;
+      updateAttendanceStats(isMOM, isBoard);
     });
   });
 }
 
-function updateAttendanceStats(isMOM) {
+function updateAttendanceStats(isMOM, isBoard) {
   let members = 0, spouses = 0, kids = 0;
-  Object.values(State.attendanceEdited).forEach(r => {
-    if (r.memberPresent) members++;
-    if (!isMOM && r.spousePresent) spouses++;
-    kids += r.kidsCount;
-  });
-  document.getElementById('stat-members').textContent  = members;
-  document.getElementById('stat-spouses').textContent  = spouses;
-  document.getElementById('stat-kids').textContent     = kids;
-  document.getElementById('stat-total').textContent    =
-    members + (isMOM ? 0 : spouses) + kids;
 
-  const spouseStatEl = document.getElementById('stat-spouse-wrap');
-  if (spouseStatEl) spouseStatEl.style.display = isMOM ? 'none' : '';
+  // For board meetings count only board member records
+  const boardIds = isBoard
+    ? new Set(State.members.filter(m => m.boardMember).map(m => m.memberId))
+    : null;
+
+  Object.entries(State.attendanceEdited).forEach(([id, r]) => {
+    if (boardIds && !boardIds.has(id)) return;
+    if (r.memberPresent) members++;
+    if (!isMOM && !isBoard && r.spousePresent) spouses++;
+    if (!isBoard) kids += r.kidsCount;
+  });
+
+  document.getElementById('stat-members').textContent = members;
+  document.getElementById('stat-spouses').textContent = spouses;
+  document.getElementById('stat-kids').textContent    = kids;
+  document.getElementById('stat-total').textContent   = members + spouses + kids;
+
+  const spouseWrap = document.getElementById('stat-spouse-wrap');
+  const kidsWrap   = document.getElementById('stat-kids-wrap');
+  if (spouseWrap) spouseWrap.style.display = (isMOM || isBoard) ? 'none' : '';
+  if (kidsWrap)   kidsWrap.style.display   = isBoard ? 'none' : '';
 }
 
 // Save attendance

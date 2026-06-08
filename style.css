@@ -463,6 +463,21 @@ select option { background: var(--bg2); }
   margin: 16px 0;
 }
 
+/* ── Home club name ── */
+.home-club-name {
+  text-align: center;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  padding: 10px 0 4px;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--primary), #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 /* ── Analysis Page ── */
 .analysis-card {
   background: var(--card);

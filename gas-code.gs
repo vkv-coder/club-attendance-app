@@ -128,6 +128,7 @@ function getMembers() {
       annet1Name:      row[idx('NAME (Annet-1)')] || row[9],
       annet1Birth:     row[idx('BIRTH DATE (Annet-1)')] || row[10],
       annet2Name:      row[idx('NAME (Annet-2)')] || row[11],
+      boardMember:     (row[14] || '').toString().toUpperCase() === 'Y',
     });
   }
   return { success: true, members };
