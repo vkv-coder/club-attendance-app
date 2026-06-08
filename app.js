@@ -29,6 +29,10 @@ const LS = {
 
 // ── API helper (JSONP — bypasses GAS redirect CORS block) ──
 function api(params) {
+  // Auto-inject clubId for all authenticated calls
+  if (State.user?.clubId && params.action !== 'checkUser') {
+    params = { ...params, clubId: State.user.clubId };
+  }
   return new Promise((resolve, reject) => {
     const cbName = '__gasCb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const u = new URL(GAS_URL);
@@ -82,7 +86,7 @@ function navigateTo(pageId, title = '') {
   // Update top bar
   const backBtn = document.querySelector('.back-btn');
   const h1 = document.querySelector('.top-bar h1');
-  const isRoot = ['page-home', 'page-meetings', 'page-reminder'].includes(pageId);
+  const isRoot = ['page-home', 'page-meetings', 'page-reminder', 'page-members'].includes(pageId);
 
   backBtn.classList.toggle('visible', !isRoot);
   h1.textContent = title || pageTitles[pageId] || 'Club Attendance';
@@ -101,13 +105,17 @@ const pageTitles = {
   'page-attendance':'Attendance',
   'page-reminder':  'Reminders',
   'page-analysis':  'Analysis',
+  'page-members':   'Members',
+  'page-users':     'App Users',
+  'page-clubs':     'Manage Clubs',
 };
 
 // ── Back button ────────────────────────────────────────────
 document.querySelector('.back-btn').addEventListener('click', () => {
-  if (window._currentPage === 'page-analysis') {
-    navigateTo('page-home');
-    renderHome();
+  if (window._currentPage === 'page-analysis' ||
+      window._currentPage === 'page-users'    ||
+      window._currentPage === 'page-clubs') {
+    navigateTo('page-home'); renderHome();
   } else {
     navigateTo('page-meetings');
   }
@@ -121,6 +129,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     if (page === 'page-home')     renderHome();
     if (page === 'page-meetings') renderMeetings();
     if (page === 'page-reminder') renderReminder();
+    if (page === 'page-members')  renderMembers();
   });
 });
 
@@ -263,11 +272,17 @@ function renderHome() {
   if (clubNameEl) clubNameEl.textContent = State.clubName;
 
   // Admin-only section
-  const isAdmin = State.user && (State.user.role || '').toLowerCase() === 'admin';
+  const role       = (State.user?.role || '').toLowerCase();
+  const isAdmin    = role === 'admin' || role === 'superadmin';
+  const isSuperAdmin = role === 'superadmin';
   const _ah = document.getElementById('admin-section-heading');
   const _aa = document.getElementById('admin-actions');
   if (_ah) _ah.style.display = isAdmin ? '' : 'none';
   if (_aa) _aa.style.display = isAdmin ? '' : 'none';
+  const _cu = document.getElementById('btn-manage-users');
+  const _cc = document.getElementById('btn-manage-clubs');
+  if (_cu) _cu.style.display = isAdmin ? '' : 'none';
+  if (_cc) _cc.style.display = isSuperAdmin ? '' : 'none';
 
   // Recent meeting
   const recent = [...State.meetings].sort((a, b) =>
@@ -916,6 +931,427 @@ function buildAnalysisMessage(member, monthStr, clubName) {
   lines.push('Regards,', clubName);
   return lines.join('\n');
 }
+
+// ── MEMBERS PAGE ──────────────────────────────────────────
+let _memberSearch = '';
+
+function renderMembers() {
+  const list  = document.getElementById('members-list');
+  const role  = (State.user?.role || '').toLowerCase();
+  const isAdmin = role === 'admin' || role === 'superadmin';
+  const canEdit = isAdmin;
+
+  // Show/hide admin controls
+  const adminBar = document.getElementById('members-admin-bar');
+  if (adminBar) adminBar.style.display = canEdit ? 'flex' : 'none';
+
+  const q = _memberSearch.toLowerCase();
+  const filtered = State.members.filter(m =>
+    !q || (m.memberName || '').toLowerCase().includes(q) ||
+    (m.spouseName || '').toLowerCase().includes(q) ||
+    (m.memberMobile || '').includes(q)
+  );
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">👥</div><p>${
+      _memberSearch ? 'No members match your search.' : 'No members yet.<br>Tap + or upload Excel to add.'
+    }</p></div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(m => `
+    <div class="member-card" data-id="${m.memberId}">
+      <div class="member-card-info">
+        <div class="member-card-name">
+          ${m.memberName}
+          ${m.boardMember ? '<span class="board-badge-sm">Board</span>' : ''}
+        </div>
+        ${m.spouseName ? `<div class="member-card-spouse">& ${m.spouseName}</div>` : ''}
+        <div class="member-card-meta">${m.memberMobile || '—'}</div>
+      </div>
+      ${canEdit ? `<div class="member-card-actions" onclick="event.stopPropagation()">
+        <button class="mtg-edit-btn mem-edit-btn" data-id="${m.memberId}" title="Edit">✏️</button>
+        <button class="mtg-del-btn  mem-del-btn"  data-id="${m.memberId}" title="Delete">🗑️</button>
+      </div>` : ''}
+    </div>
+  `).join('');
+
+  if (canEdit) {
+    list.querySelectorAll('.mem-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const m = State.members.find(x => x.memberId === btn.dataset.id);
+        if (m) openMemberModal(m);
+      });
+    });
+    list.querySelectorAll('.mem-del-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const m = State.members.find(x => x.memberId === btn.dataset.id);
+        if (m) confirmDeleteMember(m);
+      });
+    });
+  }
+}
+
+document.getElementById('member-search')?.addEventListener('input', function () {
+  _memberSearch = this.value;
+  renderMembers();
+});
+
+// ── MEMBER MODAL (Add / Edit) ─────────────────────────────
+let _editingMember = null;
+
+function openMemberModal(member = null) {
+  _editingMember = member;
+  const title = document.getElementById('member-modal-title');
+  if (title) title.textContent = member ? '✏️ Edit Member' : '➕ Add Member';
+
+  const fields = ['memberName','memberMobile','memberEmail','memberBirthDate',
+                  'spouseName','spouseMobile','spouseEmail','spouseBirthDate',
+                  'weddingDate','kid1Name','kid1BirthDate','kid2Name','kid2BirthDate'];
+  fields.forEach(f => {
+    const el = document.getElementById('mem-' + f);
+    if (el) el.value = member ? (member[f] || member.annet1Name && f === 'kid1Name' ? (member[f] || member.annet1Name || '') : '') : '';
+  });
+  if (member) {
+    document.getElementById('mem-memberName').value    = member.memberName    || '';
+    document.getElementById('mem-memberMobile').value  = member.memberMobile  || '';
+    document.getElementById('mem-memberEmail').value   = member.memberEmail   || '';
+    document.getElementById('mem-memberBirthDate').value = member.memberBirthDate || '';
+    document.getElementById('mem-spouseName').value    = member.spouseName    || '';
+    document.getElementById('mem-spouseMobile').value  = member.spouseMobile  || '';
+    document.getElementById('mem-spouseEmail').value   = member.spouseEmail   || '';
+    document.getElementById('mem-spouseBirthDate').value = member.spouseBirthDate || '';
+    document.getElementById('mem-weddingDate').value   = member.weddingDate   || '';
+    document.getElementById('mem-kid1Name').value      = member.annet1Name    || '';
+    document.getElementById('mem-kid1BirthDate').value = member.annet1Birth   || '';
+    document.getElementById('mem-kid2Name').value      = member.annet2Name    || '';
+    document.getElementById('mem-kid2BirthDate').value = member.annet2Birth   || '';
+    document.getElementById('mem-boardMember').checked = member.boardMember   || false;
+  } else {
+    fields.forEach(f => { const el = document.getElementById('mem-' + f); if (el) el.value = ''; });
+    document.getElementById('mem-boardMember').checked = false;
+  }
+  openModal('modal-member');
+}
+
+document.getElementById('save-member-btn').addEventListener('click', async () => {
+  const name = document.getElementById('mem-memberName').value.trim();
+  if (!name) { toast('Member name required', 'error'); return; }
+
+  const payload = {
+    memberName:      name,
+    memberMobile:    document.getElementById('mem-memberMobile').value.trim(),
+    memberEmail:     document.getElementById('mem-memberEmail').value.trim(),
+    memberBirthDate: document.getElementById('mem-memberBirthDate').value.trim(),
+    spouseName:      document.getElementById('mem-spouseName').value.trim(),
+    spouseMobile:    document.getElementById('mem-spouseMobile').value.trim(),
+    spouseEmail:     document.getElementById('mem-spouseEmail').value.trim(),
+    spouseBirthDate: document.getElementById('mem-spouseBirthDate').value.trim(),
+    weddingDate:     document.getElementById('mem-weddingDate').value.trim(),
+    kid1Name:        document.getElementById('mem-kid1Name').value.trim(),
+    kid1BirthDate:   document.getElementById('mem-kid1BirthDate').value.trim(),
+    kid2Name:        document.getElementById('mem-kid2Name').value.trim(),
+    kid2BirthDate:   document.getElementById('mem-kid2BirthDate').value.trim(),
+    boardMember:     document.getElementById('mem-boardMember').checked,
+  };
+
+  showLoader(_editingMember ? 'Updating member…' : 'Adding member…');
+  const action  = _editingMember ? 'updateMember' : 'addMember';
+  if (_editingMember) payload.memberId = _editingMember.memberId;
+  const res = await api({ action, ...payload });
+  hideLoader();
+
+  if (res.success) {
+    toast(_editingMember ? 'Member updated ✓' : 'Member added ✓', 'success');
+    closeModal('modal-member');
+    const mRes = await api({ action: 'getMembers' });
+    if (mRes.success) { State.members = mRes.members; LS.set('members', State.members); }
+    renderMembers();
+    renderHome();
+  } else {
+    toast(res.error || 'Error saving member', 'error');
+  }
+});
+
+async function confirmDeleteMember(m) {
+  if (!confirm(`Delete member:\n${m.memberName}\n\nThis cannot be undone.`)) return;
+  showLoader('Deleting member…');
+  const res = await api({ action: 'deleteMember', memberId: m.memberId });
+  hideLoader();
+  if (res.success) {
+    toast('Member deleted', 'success');
+    State.members = State.members.filter(x => x.memberId !== m.memberId);
+    LS.set('members', State.members);
+    renderMembers();
+    renderHome();
+  } else {
+    toast(res.error || 'Delete failed', 'error');
+  }
+}
+
+// ── EXCEL / CSV UPLOAD ────────────────────────────────────
+function downloadMemberTemplate() {
+  const headers = ['MemberName','MemberMobile','MemberEmail','MemberBirthDate',
+                   'SpouseName','SpouseMobile','SpouseEmail','SpouseBirthDate',
+                   'WeddingDate','Kid1Name','Kid1BirthDate','Kid2Name','Kid2BirthDate','BoardMember'];
+  const sample  = ['Raj Shah','9876543210','raj@gmail.com','18 Feb',
+                   'Priya Shah','9876543211','priya@gmail.com','12 Apr',
+                   '15 Jun','Aryan','05 Mar','Sia','22 Nov','Y'];
+  const csv = [headers.join(','), sample.join(',')].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'member_template.csv';
+  a.click();
+}
+
+document.getElementById('upload-excel-btn')?.addEventListener('click', () => {
+  document.getElementById('member-file-input').click();
+});
+
+document.getElementById('member-file-input')?.addEventListener('change', async function () {
+  const file = this.files[0];
+  if (!file) return;
+  this.value = '';
+
+  const ext = file.name.split('.').pop().toLowerCase();
+  showLoader('Reading file…');
+
+  try {
+    let members = [];
+    if (ext === 'csv') {
+      const text = await file.text();
+      members = parseCSV(text);
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      if (typeof XLSX === 'undefined') {
+        toast('Excel library not loaded. Use CSV or check network.', 'error');
+        hideLoader(); return;
+      }
+      const buf   = await file.arrayBuffer();
+      const wb    = XLSX.read(buf, { type: 'array' });
+      const ws    = wb.Sheets[wb.SheetNames[0]];
+      const rows  = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      members     = rows;
+    } else {
+      toast('Please upload .xlsx, .xls or .csv file', 'error');
+      hideLoader(); return;
+    }
+    hideLoader();
+    if (!members.length) { toast('No data found in file', 'error'); return; }
+    showUploadPreview(members);
+  } catch (err) {
+    hideLoader();
+    toast('Error reading file: ' + err.message, 'error');
+  }
+});
+
+function parseCSV(text) {
+  const lines   = text.split('\n').filter(l => l.trim());
+  const headers = lines[0].split(',').map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const vals = line.split(',');
+    const obj  = {};
+    headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+}
+
+function showUploadPreview(rows) {
+  State._uploadRows = rows;
+  const preview = document.getElementById('upload-preview');
+  const table   = document.getElementById('upload-preview-table');
+  if (!preview || !table) return;
+
+  const keys = Object.keys(rows[0]);
+  table.innerHTML = `
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <thead><tr>${keys.map(k => `<th style="padding:4px 6px;background:var(--bg3);text-align:left;white-space:nowrap;">${k}</th>`).join('')}</tr></thead>
+      <tbody>${rows.slice(0,5).map(r =>
+        `<tr>${keys.map(k => `<td style="padding:4px 6px;border-bottom:1px solid var(--border);">${r[k]||''}</td>`).join('')}</tr>`
+      ).join('')}
+      ${rows.length > 5 ? `<tr><td colspan="${keys.length}" style="padding:4px 6px;color:var(--muted);">…and ${rows.length-5} more rows</td></tr>` : ''}
+      </tbody>
+    </table>`;
+  document.getElementById('upload-count').textContent = rows.length + ' members found';
+  preview.style.display = '';
+  openModal('modal-upload-preview');
+}
+
+document.getElementById('confirm-upload-btn')?.addEventListener('click', async () => {
+  const rows = State._uploadRows;
+  if (!rows?.length) return;
+
+  const mode = document.querySelector('input[name="upload-mode"]:checked')?.value || 'replace';
+  const members = rows.map(r => ({
+    memberName:      r.MemberName      || r['Member Name']      || '',
+    memberMobile:    r.MemberMobile    || r['Mobile']           || '',
+    memberEmail:     r.MemberEmail     || r['Email']            || '',
+    memberBirthDate: r.MemberBirthDate || r['Birth Date']       || '',
+    spouseName:      r.SpouseName      || r['Spouse Name']      || '',
+    spouseMobile:    r.SpouseMobile    || r['Spouse Mobile']    || '',
+    spouseEmail:     r.SpouseEmail     || r['Spouse Email']     || '',
+    spouseBirthDate: r.SpouseBirthDate || r['Spouse Birth Date']|| '',
+    weddingDate:     r.WeddingDate     || r['Wedding Date']     || '',
+    kid1Name:        r.Kid1Name        || r['Kid1Name']         || '',
+    kid1BirthDate:   r.Kid1BirthDate   || r['Kid1BirthDate']    || '',
+    kid2Name:        r.Kid2Name        || r['Kid2Name']         || '',
+    kid2BirthDate:   r.Kid2BirthDate   || r['Kid2BirthDate']    || '',
+    boardMember:     (r.BoardMember    || r['Board Member']     || '').toString().toUpperCase() === 'Y',
+  })).filter(m => m.memberName);
+
+  closeModal('modal-upload-preview');
+  showLoader(`Uploading ${members.length} members…`);
+  const res = await api({ action: 'bulkAddMembers', members, mode });
+  hideLoader();
+
+  if (res.success) {
+    toast(`${res.count} members uploaded ✓`, 'success');
+    const mRes = await api({ action: 'getMembers' });
+    if (mRes.success) { State.members = mRes.members; LS.set('members', State.members); }
+    renderMembers();
+    renderHome();
+  } else {
+    toast(res.error || 'Upload failed', 'error');
+  }
+});
+
+// ── USERS PAGE ────────────────────────────────────────────
+async function renderUsers() {
+  navigateTo('page-users');
+  showLoader('Loading users…');
+  const res = await api({ action: 'getUsers' });
+  hideLoader();
+  const list = document.getElementById('users-list');
+  if (!res.success) { list.innerHTML = `<p style="color:var(--error)">${res.error}</p>`; return; }
+
+  State._users = res.users;
+  if (!res.users.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">👤</div><p>No users yet.</p></div>`;
+    return;
+  }
+  list.innerHTML = res.users.map(u => `
+    <div class="member-card">
+      <div class="member-card-info">
+        <div class="member-card-name">${u.UserName || u.EmailID}</div>
+        <div class="member-card-meta">${u.EmailID} · <span class="role-badge ${(u.Role||'').toLowerCase()}">${u.Role||'Member'}</span></div>
+      </div>
+      <div class="member-card-actions" onclick="event.stopPropagation()">
+        <button class="mtg-edit-btn user-toggle-btn" data-email="${u.EmailID}"
+          title="${u.Active === true || u.Active === 'TRUE' ? 'Deactivate' : 'Activate'}">
+          ${u.Active === true || u.Active === 'TRUE' ? '✅' : '⛔'}
+        </button>
+        <button class="mtg-del-btn user-del-btn" data-email="${u.EmailID}" title="Delete">🗑️</button>
+      </div>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.user-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const u      = State._users.find(x => x.EmailID === btn.dataset.email);
+      const active = !(u.Active === true || u.Active === 'TRUE');
+      showLoader('Updating…');
+      const r = await api({ action: 'updateUser', email: u.EmailID, active });
+      hideLoader();
+      if (r.success) renderUsers();
+      else toast(r.error || 'Error', 'error');
+    });
+  });
+  list.querySelectorAll('.user-del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Remove user ' + btn.dataset.email + '?')) return;
+      showLoader('Removing…');
+      const r = await api({ action: 'deleteUser', email: btn.dataset.email });
+      hideLoader();
+      if (r.success) renderUsers();
+      else toast(r.error || 'Error', 'error');
+    });
+  });
+}
+
+document.getElementById('add-user-btn')?.addEventListener('click', () => {
+  document.getElementById('new-user-email').value = '';
+  document.getElementById('new-user-name').value  = '';
+  document.getElementById('new-user-role').value  = 'Member';
+  openModal('modal-add-user');
+});
+
+document.getElementById('save-user-btn')?.addEventListener('click', async () => {
+  const email = document.getElementById('new-user-email').value.trim();
+  const name  = document.getElementById('new-user-name').value.trim();
+  const role  = document.getElementById('new-user-role').value;
+  if (!email) { toast('Email required', 'error'); return; }
+  showLoader('Adding user…');
+  const res = await api({ action: 'addUser', email, name, role });
+  hideLoader();
+  if (res.success) { toast('User added ✓', 'success'); closeModal('modal-add-user'); renderUsers(); }
+  else toast(res.error || 'Error', 'error');
+});
+
+// ── CLUBS PAGE (Super Admin) ──────────────────────────────
+async function renderClubs() {
+  navigateTo('page-clubs');
+  showLoader('Loading clubs…');
+  const res = await api({ action: 'getClubs' });
+  hideLoader();
+  const list = document.getElementById('clubs-list');
+  if (!res.success) { list.innerHTML = `<p style="color:var(--error)">${res.error}</p>`; return; }
+
+  if (!res.clubs.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">🏢</div><p>No clubs yet.</p></div>`;
+    return;
+  }
+  list.innerHTML = res.clubs.map(c => `
+    <div class="member-card">
+      <div class="member-card-info">
+        <div class="member-card-name">${c.ClubName} <span style="font-size:11px;color:var(--muted)">(${c.ClubID})</span></div>
+        <div class="member-card-meta">${c.City||''} · ${c.AdminEmail||''}</div>
+      </div>
+      <div class="member-card-actions" onclick="event.stopPropagation()">
+        <button class="mtg-edit-btn club-toggle-btn" data-id="${c.ClubID}"
+          title="${c.Active === true || c.Active === 'TRUE' ? 'Deactivate' : 'Activate'}">
+          ${c.Active === true || c.Active === 'TRUE' ? '✅' : '⛔'}
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.club-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const c      = res.clubs.find(x => x.ClubID === btn.dataset.id);
+      const active = !(c.Active === true || c.Active === 'TRUE');
+      showLoader('Updating…');
+      const r = await api({ action: 'updateClub', clubId: c.ClubID, active });
+      hideLoader();
+      if (r.success) renderClubs();
+      else toast(r.error || 'Error', 'error');
+    });
+  });
+}
+
+document.getElementById('add-club-btn')?.addEventListener('click', () => {
+  ['new-club-name','new-club-city','new-club-admin-email','new-club-admin-name'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  openModal('modal-add-club');
+});
+
+document.getElementById('save-club-btn')?.addEventListener('click', async () => {
+  const clubName   = document.getElementById('new-club-name').value.trim();
+  const city       = document.getElementById('new-club-city').value.trim();
+  const adminEmail = document.getElementById('new-club-admin-email').value.trim();
+  const adminName  = document.getElementById('new-club-admin-name').value.trim();
+  if (!clubName || !adminEmail) { toast('Club name and admin email required', 'error'); return; }
+  showLoader('Creating club…');
+  const res = await api({ action: 'addClub', clubName, city, adminEmail, adminName });
+  hideLoader();
+  if (res.success) {
+    toast(`Club created — ID: ${res.clubId} ✓`, 'success');
+    closeModal('modal-add-club');
+    renderClubs();
+  } else {
+    toast(res.error || 'Error', 'error');
+  }
+});
 
 // ── STARTUP ────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {

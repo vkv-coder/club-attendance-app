@@ -11,6 +11,8 @@
   <title>Club Attendance App</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
+  <!-- SheetJS for Excel upload -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -97,10 +99,12 @@
 
     <!-- Admin actions (shown only for Admin role) -->
     <div class="section-heading" id="admin-section-heading" style="display:none;">Admin</div>
-    <div id="admin-actions" style="display:none;">
-      <button class="btn btn-ghost" onclick="openAnalysisPicker();">
-        📊 Generate Analysis
-      </button>
+    <div id="admin-actions" style="display:none;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <button class="btn btn-ghost" onclick="openAnalysisPicker();">📊 Generate Analysis</button>
+      <button class="btn btn-ghost" id="btn-manage-users" style="display:none;"
+              onclick="renderUsers()">👤 Manage Users</button>
+      <button class="btn btn-ghost" id="btn-manage-clubs" style="display:none;"
+              onclick="renderClubs()">🏢 Manage Clubs</button>
     </div>
   </div>
 
@@ -108,6 +112,37 @@
   <div class="page" id="page-analysis">
     <div id="analysis-meta" style="font-size:13px;color:var(--text2);margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;"></div>
     <div id="analysis-list"></div>
+  </div>
+
+  <!-- ── MEMBERS PAGE ── -->
+  <div class="page" id="page-members">
+    <div id="members-admin-bar" style="display:none;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="openMemberModal()">➕ Add Member</button>
+      <button class="btn btn-ghost"   onclick="downloadMemberTemplate()">⬇️ Template</button>
+      <button class="btn btn-ghost"   id="upload-excel-btn">⬆️ Upload Excel/CSV</button>
+      <input type="file" id="member-file-input" accept=".xlsx,.xls,.csv" style="display:none;" />
+    </div>
+    <input type="search" id="member-search" class="form-control"
+           placeholder="🔍 Search members…" style="margin-bottom:12px;" />
+    <div id="members-list"></div>
+  </div>
+
+  <!-- ── USERS PAGE ── -->
+  <div class="page" id="page-users">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span style="font-size:13px;color:var(--text2)">Users who can log in to this club's app</span>
+      <button class="btn btn-primary" id="add-user-btn" style="padding:8px 14px;">➕ Add</button>
+    </div>
+    <div id="users-list"></div>
+  </div>
+
+  <!-- ── CLUBS PAGE ── -->
+  <div class="page" id="page-clubs">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span style="font-size:13px;color:var(--text2)">All registered clubs</span>
+      <button class="btn btn-primary" id="add-club-btn" style="padding:8px 14px;">➕ New Club</button>
+    </div>
+    <div id="clubs-list"></div>
   </div>
 
   <!-- ── MEETINGS PAGE ── -->
@@ -194,10 +229,143 @@
     <button class="nav-btn" data-page="page-meetings">
       <span class="icon">📅</span> Meetings
     </button>
+    <button class="nav-btn" data-page="page-members">
+      <span class="icon">👥</span> Members
+    </button>
     <button class="nav-btn" data-page="page-reminder">
       <span class="icon">📢</span> Reminder
     </button>
   </nav>
+</div>
+
+<!-- ════════════════════════════════════════════
+     ADD / EDIT MEMBER MODAL
+════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-member">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="member-modal-title">➕ Add Member</div>
+
+    <div class="form-section-label">Member Details</div>
+    <div class="form-group"><label>Full Name *</label>
+      <input type="text" id="mem-memberName" placeholder="e.g. Raj Shah" /></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-group"><label>Mobile</label>
+        <input type="tel" id="mem-memberMobile" inputmode="numeric" placeholder="9876543210" /></div>
+      <div class="form-group"><label>Birth Date</label>
+        <input type="text" id="mem-memberBirthDate" placeholder="18 Feb" /></div>
+    </div>
+    <div class="form-group"><label>Email</label>
+      <input type="email" id="mem-memberEmail" placeholder="raj@gmail.com" /></div>
+
+    <div class="form-section-label">Spouse Details</div>
+    <div class="form-group"><label>Spouse Name</label>
+      <input type="text" id="mem-spouseName" placeholder="e.g. Priya Shah" /></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-group"><label>Spouse Mobile</label>
+        <input type="tel" id="mem-spouseMobile" inputmode="numeric" /></div>
+      <div class="form-group"><label>Spouse Birth Date</label>
+        <input type="text" id="mem-spouseBirthDate" placeholder="12 Apr" /></div>
+    </div>
+    <div class="form-group"><label>Spouse Email</label>
+      <input type="email" id="mem-spouseEmail" /></div>
+
+    <div class="form-section-label">Family</div>
+    <div class="form-group"><label>Wedding Date</label>
+      <input type="text" id="mem-weddingDate" placeholder="15 Jun" /></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-group"><label>Kid 1 Name</label>
+        <input type="text" id="mem-kid1Name" /></div>
+      <div class="form-group"><label>Kid 1 Birth Date</label>
+        <input type="text" id="mem-kid1BirthDate" placeholder="05 Mar" /></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-group"><label>Kid 2 Name</label>
+        <input type="text" id="mem-kid2Name" /></div>
+      <div class="form-group"><label>Kid 2 Birth Date</label>
+        <input type="text" id="mem-kid2BirthDate" placeholder="22 Nov" /></div>
+    </div>
+
+    <div class="form-section-label">Role</div>
+    <label class="toggle-row">
+      <input type="checkbox" id="mem-boardMember" />
+      <span>Board Member</span>
+    </label>
+
+    <div style="margin-top:16px;">
+      <button class="btn btn-primary" id="save-member-btn">Save Member</button>
+      <button class="btn btn-ghost" data-close-modal="modal-member" style="margin-top:10px;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     UPLOAD PREVIEW MODAL
+════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-upload-preview">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📋 Upload Preview</div>
+    <div id="upload-count" style="font-size:13px;color:var(--text2);margin-bottom:8px;"></div>
+    <div id="upload-preview" style="overflow-x:auto;max-height:260px;overflow-y:auto;"></div>
+    <div id="upload-preview-table"></div>
+
+    <div class="form-section-label" style="margin-top:14px;">Upload Mode</div>
+    <label class="toggle-row">
+      <input type="radio" name="upload-mode" value="replace" checked /> Replace all existing members
+    </label>
+    <label class="toggle-row" style="margin-top:6px;">
+      <input type="radio" name="upload-mode" value="add" /> Add to existing members
+    </label>
+
+    <div style="margin-top:16px;">
+      <button class="btn btn-primary" id="confirm-upload-btn">⬆️ Confirm Upload</button>
+      <button class="btn btn-ghost" data-close-modal="modal-upload-preview" style="margin-top:10px;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     ADD USER MODAL
+════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-add-user">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">👤 Add App User</div>
+    <div class="form-group"><label>Email Address *</label>
+      <input type="email" id="new-user-email" placeholder="member@gmail.com" /></div>
+    <div class="form-group"><label>Display Name</label>
+      <input type="text" id="new-user-name" placeholder="e.g. Raj Shah" /></div>
+    <div class="form-group"><label>Role</label>
+      <select id="new-user-role">
+        <option value="Member">Member</option>
+        <option value="Admin">Admin</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" id="save-user-btn">Add User</button>
+    <button class="btn btn-ghost" data-close-modal="modal-add-user" style="margin-top:10px;">Cancel</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     ADD CLUB MODAL (Super Admin)
+════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-add-club">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🏢 Add New Club</div>
+    <div class="form-group"><label>Club Name *</label>
+      <input type="text" id="new-club-name" placeholder="e.g. Lions Surat" /></div>
+    <div class="form-group"><label>City</label>
+      <input type="text" id="new-club-city" placeholder="e.g. Surat" /></div>
+    <div class="form-section-label">Club Admin (they can log in immediately)</div>
+    <div class="form-group"><label>Admin Email *</label>
+      <input type="email" id="new-club-admin-email" placeholder="admin@gmail.com" /></div>
+    <div class="form-group"><label>Admin Name</label>
+      <input type="text" id="new-club-admin-name" placeholder="e.g. Amit Desai" /></div>
+    <button class="btn btn-primary" id="save-club-btn">Create Club</button>
+    <button class="btn btn-ghost" data-close-modal="modal-add-club" style="margin-top:10px;">Cancel</button>
+  </div>
 </div>
 
 <!-- ════════════════════════════════════════════
