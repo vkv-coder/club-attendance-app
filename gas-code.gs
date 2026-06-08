@@ -190,6 +190,9 @@ function getAttendance(meetingId) {
     if (data[i][headers.indexOf('MeetingID')] === meetingId) {
       const obj = {};
       headers.forEach((h, j) => obj[h] = data[i][j]);
+      // Confirmation fields at col I(8) and J(9) — fallback by index if headers absent
+      if (!('MemberConfirmed' in obj)) obj.MemberConfirmed = data[i][8] || false;
+      if (!('SpouseConfirmed'  in obj)) obj.SpouseConfirmed  = data[i][9] || false;
       rows.push(obj);
     }
   }
@@ -234,20 +237,24 @@ function saveAttendance(payload) {
       rec.spousePresent,
       rec.kidsCount || 0,
       payload.updatedBy,
-      now
+      now,
+      rec.memberConfirmed || false,
+      rec.spouseConfirmed || false
     ];
 
     if (existingMap[key]) {
       // Update existing row (keep AttendanceID)
       const rowNum = existingMap[key];
-      sheet.getRange(rowNum, 2, 1, 7).setValues([[
+      sheet.getRange(rowNum, 2, 1, 9).setValues([[
         payload.meetingId,
         rec.memberId,
         rec.memberPresent,
         rec.spousePresent,
         rec.kidsCount || 0,
         payload.updatedBy,
-        now
+        now,
+        rec.memberConfirmed || false,
+        rec.spouseConfirmed || false
       ]]);
     } else {
       // Insert new row

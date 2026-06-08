@@ -67,11 +67,10 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .top-bar .club-badge {
-  font-family: var(--mono);
-  font-size: 11px; color: var(--accent);
+  font-size: 15px; font-weight: 700; color: var(--accent);
   background: rgba(245,158,11,0.12);
-  padding: 3px 8px; border-radius: 99px;
-  white-space: nowrap;
+  padding: 4px 12px; border-radius: 99px;
+  white-space: nowrap; letter-spacing: 0.02em;
 }
 
 /* ── Bottom Nav ── */
@@ -269,6 +268,48 @@ select option { background: var(--bg2); }
   border-color: var(--border);
 }
 .tap-cell.hidden-col { visibility: hidden; pointer-events: none; }
+
+/* Attendance group rows */
+.att-group {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: none;
+}
+.att-group:first-child { border-top: 1px solid var(--border); border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.att-group:last-child  { border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+.att-group:nth-child(even) { background: var(--bg3); }
+.att-sub-row {
+  display: grid;
+  gap: 4px;
+  padding: 7px 10px;
+  align-items: center;
+}
+.att-spouse-row {
+  border-top: 1px dashed rgba(255,255,255,0.06);
+  padding-top: 4px;
+  padding-bottom: 6px;
+}
+.att-spouse-name {
+  font-size: 12px; color: var(--text2);
+}
+
+/* Confirmation cell */
+.tap-cell.conf-yes {
+  background: rgba(59,130,246,0.18);
+  border-color: var(--primary);
+}
+.tap-cell.conf-no {
+  background: var(--bg);
+}
+
+/* Locked attendance cell */
+.tap-cell.att-locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--bg) !important;
+  border-style: dashed !important;
+  font-size: 16px;
+}
 
 /* Kids counter */
 .kids-cell {

@@ -17,6 +17,7 @@ const State = {
   todayEvents: { birthdays: [], anniversaries: [] },
   online: navigator.onLine,
   analysisData: null,
+  meetingStarted: true,
 };
 
 // ── Local Storage helpers ──────────────────────────────────
@@ -394,15 +395,14 @@ async function openAttendance(meeting) {
 
   const isMOM   = meeting.MeetingType === 'MOM';
   const isBoard = meeting.MeetingType === 'Board';
+  State.meetingStarted = isMeetingStarted(meeting);
 
   showLoader('Loading attendance…');
   let existingMap = {};
   try {
     const res = await api({ action: 'getAttendance', meetingId: meeting.MeetingID });
     if (res.success) {
-      res.attendance.forEach(r => {
-        existingMap[r.MemberID] = r;
-      });
+      res.attendance.forEach(r => { existingMap[r.MemberID] = r; });
     }
   } catch { /* use empty */ }
   hideLoader();
@@ -410,10 +410,13 @@ async function openAttendance(meeting) {
   // Pre-fill edits from existing
   State.members.forEach(m => {
     const ex = existingMap[m.memberId];
+    const bool = v => v === true || v === 'TRUE';
     State.attendanceEdited[m.memberId] = {
-      memberPresent: ex ? (ex.MemberPresent === true || ex.MemberPresent === 'TRUE') : false,
-      spousePresent: ex ? (ex.SpousePresent === true || ex.SpousePresent === 'TRUE') : false,
-      kidsCount:     ex ? (parseInt(ex.KidsCount) || 0) : 0,
+      memberPresent:   ex ? bool(ex.MemberPresent)   : false,
+      spousePresent:   ex ? bool(ex.SpousePresent)   : false,
+      kidsCount:       ex ? (parseInt(ex.KidsCount) || 0) : 0,
+      memberConfirmed: ex ? bool(ex.MemberConfirmed) : false,
+      spouseConfirmed: ex ? bool(ex.SpouseConfirmed) : false,
     };
   });
 
@@ -421,88 +424,102 @@ async function openAttendance(meeting) {
   updateAttendanceStats(isMOM, isBoard);
 }
 
-function renderAttendanceGrid(isMOM, isBoard) {
-  const grid   = document.getElementById('attendance-grid');
-  const header = document.getElementById('attendance-header');
+function isMeetingStarted(meeting) {
+  if (!meeting.MeetingDate) return true;
+  try {
+    let dateStr = meeting.MeetingDate.toString();
+    if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+    const timeStr = (meeting.MeetingTime || '00:00').toString().substring(0, 5);
+    const dt = new Date(dateStr + 'T' + timeStr + ':00');
+    if (isNaN(dt.getTime())) return true;
+    return Date.now() >= dt.getTime();
+  } catch { return true; }
+}
 
-  // For board meetings: only show board members; fallback to all if field not yet in cache
+function renderAttendanceGrid(isMOM, isBoard) {
+  const grid      = document.getElementById('attendance-grid');
+  const header    = document.getElementById('attendance-header');
+  const attLocked = !State.meetingStarted;
+  const cols      = isBoard ? '1fr 44px 44px' : '1fr 44px 44px 48px';
+
+  const boardFiltered  = State.members.filter(m => m.boardMember);
   const displayMembers = isBoard
-    ? (State.members.filter(m => m.boardMember).length > 0
-        ? State.members.filter(m => m.boardMember)
-        : State.members)
+    ? (boardFiltered.length > 0 ? boardFiltered : State.members)
     : State.members;
 
+  // Header
+  header.style.gridTemplateColumns = cols;
   if (isBoard) {
-    header.style.gridTemplateColumns = '1fr 44px';
-    header.innerHTML = '<span>Board Member</span><span>Mbr</span>';
+    header.innerHTML = `<span>Board Member</span><span>Conf</span><span>Att</span>`;
+  } else if (isMOM) {
+    header.innerHTML = `<span>Member</span><span>Conf</span><span>Att</span><span>Kids</span>`;
   } else {
-    header.style.gridTemplateColumns = '';
-    header.innerHTML = `
-      <span>Member</span>
-      <span>Mbr</span>
-      <span class="${isMOM ? 'hidden-col' : ''}">Sps</span>
-      <span>Kids</span>
-    `;
+    header.innerHTML = `<span>Member / Spouse</span><span>Conf</span><span>Att</span><span>Kids</span>`;
   }
 
   grid.innerHTML = displayMembers.map(m => {
-    const rec      = State.attendanceEdited[m.memberId] || { memberPresent: false, spousePresent: false, kidsCount: 0 };
-    const mPresent = rec.memberPresent;
-    const sPresent = rec.spousePresent;
+    const rec = State.attendanceEdited[m.memberId] || {
+      memberPresent: false, spousePresent: false, kidsCount: 0,
+      memberConfirmed: false, spouseConfirmed: false
+    };
 
-    if (isBoard) {
-      return `
-      <div class="attendance-row" data-id="${m.memberId}" style="grid-template-columns:1fr 44px;">
+    const mRow = `
+      <div class="att-sub-row" style="grid-template-columns:${cols}">
         <div class="member-name-cell" title="${m.memberName}">${m.memberName}</div>
-        <div class="tap-cell ${mPresent ? 'present' : 'absent'}"
-             data-type="member" data-id="${m.memberId}">
-          ${mPresent ? '✅' : '⬜'}
-        </div>
+        <div class="tap-cell ${rec.memberConfirmed ? 'conf-yes' : 'conf-no'}"
+             data-kind="mconf" data-id="${m.memberId}">${rec.memberConfirmed ? '✅' : '⬜'}</div>
+        <div class="tap-cell ${rec.memberPresent ? 'present' : 'absent'}${attLocked ? ' att-locked' : ''}"
+             data-kind="matt" data-id="${m.memberId}">${attLocked ? '🔒' : (rec.memberPresent ? '✅' : '⬜')}</div>
+        ${!isBoard ? `<div class="kids-cell"><input type="number" class="kids-count-input"
+          min="0" max="20" value="${rec.kidsCount}" data-id="${m.memberId}" inputmode="numeric"/></div>` : ''}
       </div>`;
-    }
 
-    return `
-    <div class="attendance-row" data-id="${m.memberId}">
-      <div class="member-name-cell" title="${m.memberName}">${m.memberName}</div>
-      <div class="tap-cell ${mPresent ? 'present' : 'absent'}"
-           data-type="member" data-id="${m.memberId}">
-        ${mPresent ? '✅' : '⬜'}
-      </div>
-      <div class="tap-cell ${sPresent ? 'present' : 'absent'} ${isMOM ? 'hidden-col' : ''}"
-           data-type="spouse" data-id="${m.memberId}">
-        ${sPresent ? '✅' : '⬜'}
-      </div>
-      <div class="kids-cell" data-id="${m.memberId}">
-        <input type="number" class="kids-count-input"
-               min="0" max="20" value="${rec.kidsCount}"
-               data-id="${m.memberId}" inputmode="numeric" />
-      </div>
-    </div>`;
+    const sRow = (!isMOM && !isBoard && m.spouseName) ? `
+      <div class="att-sub-row att-spouse-row" style="grid-template-columns:${cols}">
+        <div class="member-name-cell att-spouse-name" title="${m.spouseName}">${m.spouseName}</div>
+        <div class="tap-cell ${rec.spouseConfirmed ? 'conf-yes' : 'conf-no'}"
+             data-kind="sconf" data-id="${m.memberId}">${rec.spouseConfirmed ? '✅' : '⬜'}</div>
+        <div class="tap-cell ${rec.spousePresent ? 'present' : 'absent'}${attLocked ? ' att-locked' : ''}"
+             data-kind="satt" data-id="${m.memberId}">${attLocked ? '🔒' : (rec.spousePresent ? '✅' : '⬜')}</div>
+        <div class="kids-cell"></div>
+      </div>` : '';
+
+    return `<div class="att-group" data-id="${m.memberId}">${mRow}${sRow}</div>`;
   }).join('');
 
-  // Tap events
-  grid.querySelectorAll('.tap-cell:not(.hidden-col)').forEach(cell => {
+  // Confirmation taps — always active
+  grid.querySelectorAll('[data-kind="mconf"],[data-kind="sconf"]').forEach(cell => {
     cell.addEventListener('click', () => {
-      const id   = cell.dataset.id;
-      const type = cell.dataset.type;
-      const rec  = State.attendanceEdited[id];
+      const rec = State.attendanceEdited[cell.dataset.id];
       if (!rec) return;
-      if (type === 'member') {
-        rec.memberPresent = !rec.memberPresent;
-        cell.classList.toggle('present', rec.memberPresent);
-        cell.classList.toggle('absent',  !rec.memberPresent);
-        cell.textContent = rec.memberPresent ? '✅' : '⬜';
-      } else {
-        rec.spousePresent = !rec.spousePresent;
-        cell.classList.toggle('present', rec.spousePresent);
-        cell.classList.toggle('absent',  !rec.spousePresent);
-        cell.textContent = rec.spousePresent ? '✅' : '⬜';
-      }
+      const key = cell.dataset.kind === 'mconf' ? 'memberConfirmed' : 'spouseConfirmed';
+      rec[key]  = !rec[key];
+      cell.classList.toggle('conf-yes', rec[key]);
+      cell.classList.toggle('conf-no',  !rec[key]);
+      cell.textContent = rec[key] ? '✅' : '⬜';
       updateAttendanceStats(isMOM, isBoard);
     });
   });
 
-  // Kids count (non-board only)
+  // Attendance taps — locked before meeting time
+  grid.querySelectorAll('[data-kind="matt"],[data-kind="satt"]').forEach(cell => {
+    cell.addEventListener('click', () => {
+      if (cell.classList.contains('att-locked')) {
+        toast('Attendance opens at meeting start time', 'error');
+        return;
+      }
+      const rec = State.attendanceEdited[cell.dataset.id];
+      if (!rec) return;
+      const key = cell.dataset.kind === 'matt' ? 'memberPresent' : 'spousePresent';
+      rec[key]  = !rec[key];
+      cell.classList.toggle('present', rec[key]);
+      cell.classList.toggle('absent',  !rec[key]);
+      cell.textContent = rec[key] ? '✅' : '⬜';
+      updateAttendanceStats(isMOM, isBoard);
+    });
+  });
+
+  // Kids count
   grid.querySelectorAll('.kids-count-input').forEach(input => {
     input.addEventListener('change', () => {
       State.attendanceEdited[input.dataset.id].kidsCount = parseInt(input.value) || 0;
@@ -512,24 +529,27 @@ function renderAttendanceGrid(isMOM, isBoard) {
 }
 
 function updateAttendanceStats(isMOM, isBoard) {
-  let members = 0, spouses = 0, kids = 0;
+  let members = 0, spouses = 0, kids = 0, confirmed = 0;
 
-  // For board meetings count only board member records
   const boardIds = isBoard
     ? new Set(State.members.filter(m => m.boardMember).map(m => m.memberId))
     : null;
 
   Object.entries(State.attendanceEdited).forEach(([id, r]) => {
     if (boardIds && !boardIds.has(id)) return;
-    if (r.memberPresent) members++;
+    if (r.memberPresent)   members++;
     if (!isMOM && !isBoard && r.spousePresent) spouses++;
-    if (!isBoard) kids += r.kidsCount;
+    if (!isBoard) kids += (r.kidsCount || 0);
+    if (r.memberConfirmed) confirmed++;
+    if (!isMOM && !isBoard && r.spouseConfirmed) confirmed++;
   });
 
-  document.getElementById('stat-members').textContent = members;
-  document.getElementById('stat-spouses').textContent = spouses;
-  document.getElementById('stat-kids').textContent    = kids;
-  document.getElementById('stat-total').textContent   = members + spouses + kids;
+  document.getElementById('stat-members').textContent  = members;
+  document.getElementById('stat-spouses').textContent  = spouses;
+  document.getElementById('stat-kids').textContent     = kids;
+  document.getElementById('stat-total').textContent    = members + spouses + kids;
+  const confEl = document.getElementById('stat-confirmed');
+  if (confEl) confEl.textContent = confirmed;
 
   const spouseWrap = document.getElementById('stat-spouse-wrap');
   const kidsWrap   = document.getElementById('stat-kids-wrap');
@@ -542,12 +562,17 @@ document.getElementById('save-attendance-btn').addEventListener('click', async (
   if (!State.currentMeeting) return;
   showLoader('Saving attendance…');
 
-  const records = State.members.map(m => ({
-    memberId:      m.memberId,
-    memberPresent: State.attendanceEdited[m.memberId].memberPresent,
-    spousePresent: State.attendanceEdited[m.memberId].spousePresent,
-    kidsCount:     State.attendanceEdited[m.memberId].kidsCount,
-  }));
+  const records = State.members.map(m => {
+    const e = State.attendanceEdited[m.memberId] || {};
+    return {
+      memberId:        m.memberId,
+      memberPresent:   e.memberPresent   || false,
+      spousePresent:   e.spousePresent   || false,
+      kidsCount:       e.kidsCount       || 0,
+      memberConfirmed: e.memberConfirmed || false,
+      spouseConfirmed: e.spouseConfirmed || false,
+    };
+  });
 
   try {
     const res = await api({
