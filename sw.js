@@ -1,5 +1,5 @@
 // Club Attendance App — Service Worker
-const CACHE_NAME = 'club-attend-v4';
+const CACHE_NAME = 'club-attend-v5';
 const STATIC_ASSETS = [
   './',
   './index.html',

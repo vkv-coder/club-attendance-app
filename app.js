@@ -16,6 +16,7 @@ const State = {
   attendanceEdited: {},  // memberId → { memberPresent, spousePresent, kidsCount }
   todayEvents: { birthdays: [], anniversaries: [] },
   online: navigator.onLine,
+  analysisData: null,
 };
 
 // ── Local Storage helpers ──────────────────────────────────
@@ -583,6 +584,7 @@ document.getElementById('generate-analysis-btn')?.addEventListener('click', asyn
   try {
     const res = await api({ action: 'getMonthlyAnalysis', month, year });
     if (res.success) {
+      State.analysisData = res;
       navigateTo('page-analysis', res.monthName + ' ' + res.year + ' Analysis');
       renderAnalysisPage(res);
     } else {
@@ -594,6 +596,36 @@ document.getElementById('generate-analysis-btn')?.addEventListener('click', asyn
   hideLoader();
 });
 
+function analysisSentKey(month, year) {
+  return 'analysis-sent-' + month + '-' + year;
+}
+
+function markSent(memberId) {
+  const data = State.analysisData;
+  if (!data) return;
+  const key     = analysisSentKey(data.month, data.year);
+  const sentArr = LS.get(key) || [];
+  if (!sentArr.includes(memberId)) { sentArr.push(memberId); LS.set(key, sentArr); }
+
+  const btn = document.querySelector('.analysis-wa-btn[data-mid="' + memberId + '"]');
+  if (btn) {
+    btn.textContent = '✓ Sent';
+    btn.classList.add('analysis-wa-sent');
+  }
+  updateSentCounter();
+}
+
+function updateSentCounter() {
+  const data = State.analysisData;
+  if (!data) return;
+  const sentArr  = LS.get(analysisSentKey(data.month, data.year)) || [];
+  const total    = data.memberReports.filter(m => m.mobile && m.mobile.replace(/\D/g,'') && m.memberName).length;
+  const counter  = document.getElementById('analysis-sent-count');
+  if (!counter) return;
+  counter.textContent = 'Sent: ' + sentArr.length + ' / ' + total;
+  counter.className   = 'analysis-sent-counter ' + (sentArr.length === total ? 'all-sent' : sentArr.length > 0 ? 'partial-sent' : '');
+}
+
 function renderAnalysisPage(data) {
   const clubName = State.clubName;
   const monthStr = data.monthName + ' ' + data.year;
@@ -601,21 +633,24 @@ function renderAnalysisPage(data) {
   const list     = document.getElementById('analysis-list');
 
   if (!data.meetings || data.meetings.length === 0) {
-    meta.textContent = '';
+    meta.innerHTML = '';
     list.innerHTML = `<div class="empty-state"><div class="icon">📅</div><p>No meetings found for ${monthStr}.</p></div>`;
     return;
   }
 
-  meta.textContent = data.meetings.length + ' meeting(s) in ' + monthStr;
+  const sentArr = LS.get(analysisSentKey(data.month, data.year)) || [];
+
+  meta.innerHTML = `
+    <span>${data.meetings.length} meeting(s) in ${monthStr}</span>
+    <span id="analysis-sent-count" class="analysis-sent-counter"></span>`;
 
   list.innerHTML = data.memberReports.map(member => {
     if (!member.memberName) return '';
 
     const mobile  = member.mobile.replace(/\D/g, '');
     const message = buildAnalysisMessage(member, monthStr, clubName);
-    const waLink  = mobile
-      ? `https://wa.me/${mobile}?text=${encodeURIComponent(message)}`
-      : null;
+    const waLink  = mobile ? `https://wa.me/${mobile}?text=${encodeURIComponent(message)}` : null;
+    const isSent  = sentArr.includes(member.memberId);
 
     const rows = member.attendance.length
       ? member.attendance.map(att => `
@@ -628,17 +663,27 @@ function renderAnalysisPage(data) {
       : `<div style="color:var(--muted);font-size:12px;padding:4px 0;">No applicable meetings</div>`;
 
     return `
-      <div class="analysis-card">
+      <div class="analysis-card ${isSent ? 'card-sent' : ''}">
         <div class="analysis-card-header">
           <span class="analysis-member-name">${member.memberName}</span>
-          ${member.isBoardMember ? '<span class="analysis-board-badge">Board</span>' : ''}
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${member.isBoardMember ? '<span class="analysis-board-badge">Board</span>' : ''}
+            ${isSent ? '<span class="sent-tick">✓ Sent</span>' : ''}
+          </div>
         </div>
         <div class="analysis-att-list">${rows}</div>
         ${waLink
-          ? `<a href="${waLink}" class="analysis-wa-btn" target="_blank" rel="noopener">📲 Send WhatsApp</a>`
+          ? `<a href="${waLink}" class="analysis-wa-btn ${isSent ? 'analysis-wa-sent' : ''}"
+               data-mid="${member.memberId}"
+               onclick="markSent('${member.memberId}')"
+               target="_blank" rel="noopener">
+               ${isSent ? '✓ Sent' : '📲 Send WhatsApp'}
+             </a>`
           : `<span class="analysis-no-mobile">No mobile number</span>`}
       </div>`;
   }).join('');
+
+  updateSentCounter();
 }
 
 function buildAnalysisMessage(member, monthStr, clubName) {
