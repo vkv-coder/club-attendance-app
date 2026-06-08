@@ -488,13 +488,29 @@ async function openAttendance(meeting) {
     meeting.MeetingType + (meeting.MeetingSubName ? ' — ' + meeting.MeetingSubName : ''));
 
   // Sub-title
-  document.getElementById('att-meeting-meta').textContent =
-    meeting.MeetingDate + (meeting.MeetingTime ? ' · ' + meeting.MeetingTime : '') +
+  const metaEl = document.getElementById('att-meeting-meta');
+  const metaText = meeting.MeetingDate + (meeting.MeetingTime ? ' · ' + meeting.MeetingTime : '') +
     (meeting.Location ? ' · ' + meeting.Location : '');
+  metaEl.innerHTML = metaText;
 
   const isMOM   = meeting.MeetingType === 'MOM';
   const isBoard = meeting.MeetingType === 'Board';
   State.meetingStarted = isMeetingStarted(meeting);
+
+  // Show/hide "not started" banner
+  let lockBanner = document.getElementById('att-lock-banner');
+  if (!lockBanner) {
+    lockBanner = document.createElement('div');
+    lockBanner.id = 'att-lock-banner';
+    lockBanner.className = 'att-lock-banner';
+    metaEl.insertAdjacentElement('afterend', lockBanner);
+  }
+  if (!State.meetingStarted) {
+    lockBanner.textContent = '🔒 Meeting not started — only Confirmation can be marked';
+    lockBanner.style.display = '';
+  } else {
+    lockBanner.style.display = 'none';
+  }
 
   showLoader('Loading attendance…');
   let existingMap = {};
@@ -526,13 +542,22 @@ async function openAttendance(meeting) {
 function isMeetingStarted(meeting) {
   if (!meeting.MeetingDate) return true;
   try {
+    // Parse date — handles "2026-06-09", "2026-06-09T00:00:00.000Z", "09-Jun-2026"
     let dateStr = meeting.MeetingDate.toString();
     if (dateStr.includes('T')) dateStr = dateStr.split('T')[0];
-    const timeStr = (meeting.MeetingTime || '00:00').toString().substring(0, 5);
-    const dt = new Date(dateStr + 'T' + timeStr + ':00');
-    if (isNaN(dt.getTime())) return true;
+    // Normalise "09-Jun-2026" → "09 Jun 2026"
+    dateStr = dateStr.replace(/-/g, ' ');
+
+    // Parse time — handles "19:30", "1899-12-30T19:30:00.000Z", "19:30:00"
+    let rawTime = (meeting.MeetingTime || '').toString().trim();
+    let timeStr = '00:00';
+    const tMatch = rawTime.match(/(\d{1,2}):(\d{2})/);
+    if (tMatch) timeStr = tMatch[1].padStart(2,'0') + ':' + tMatch[2];
+
+    const dt = new Date(dateStr + ' ' + timeStr);
+    if (isNaN(dt.getTime())) return false; // can't parse → treat as not started (lock attendance)
     return Date.now() >= dt.getTime();
-  } catch { return true; }
+  } catch { return false; }
 }
 
 function renderAttendanceGrid(isMOM, isBoard) {

@@ -218,6 +218,14 @@ select option { background: var(--bg2); }
 .mtg-edit-btn:active { background: rgba(59,130,246,0.15); }
 .mtg-del-btn:active  { background: rgba(239,68,68,0.15); }
 
+/* ── Attendance lock banner ── */
+.att-lock-banner {
+  background: #fef3c7; color: #92400e;
+  border: 1px solid #fbbf24; border-radius: 8px;
+  padding: 10px 14px; font-size: 13px; font-weight: 600;
+  margin-bottom: 12px;
+}
+
 /* ── Attendance Grid ── */
 .attendance-header {
   display: grid;
