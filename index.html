@@ -11,6 +11,13 @@
   <title>Club Attendance App</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css?v=21" />
+  <style>
+    /* Top bar 3-col flex — inline to bypass all cache layers */
+    .top-bar{display:flex!important;align-items:center!important;gap:8px!important;padding:10px 16px!important;}
+    .top-bar-left{flex:1!important;display:flex!important;align-items:center!important;gap:6px!important;min-width:0!important;}
+    .top-bar-club{flex:0 0 auto!important;display:flex!important;flex-direction:column!important;align-items:center!important;text-align:center!important;gap:1px!important;}
+    .top-bar-right{flex:1!important;display:flex!important;justify-content:flex-end!important;align-items:center!important;}
+  </style>
   <!-- SheetJS for Excel upload -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
