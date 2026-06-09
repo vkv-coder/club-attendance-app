@@ -55,7 +55,7 @@ body {
   border-bottom: 1px solid var(--border);
   padding: 10px 16px;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 8px;
 }
@@ -84,7 +84,6 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   text-align: center;
   letter-spacing: 0.02em;
-  max-width: 100%;
 }
 .club-id-chip {
   font-size: 10px; font-weight: 600;
