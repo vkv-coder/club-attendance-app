@@ -136,17 +136,59 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 // ── LOGIN ──────────────────────────────────────────────────
 document.getElementById('login-btn').addEventListener('click', async () => {
   const email = document.getElementById('login-email').value.trim();
-  if (!email) { toast('Please enter your email', 'error'); return; }
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) { toast('Please enter your email and password', 'error'); return; }
 
   showLoader('Checking access…');
   try {
-    const result = await api({ action: 'checkUser', email });
+    const result = await api({ action: 'checkUser', email, password });
     if (result.success) {
       State.user = result.user;
       LS.set('user', State.user);
       await initApp();
     } else {
       toast(result.error || 'Access denied', 'error');
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+  hideLoader();
+});
+
+// ── SIGNUP (new club self-registration) ───────────────────
+document.getElementById('show-signup-link').addEventListener('click', () => {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('signup-screen').style.display = 'flex';
+});
+document.getElementById('show-login-link').addEventListener('click', () => {
+  document.getElementById('signup-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+});
+document.getElementById('signup-btn').addEventListener('click', async () => {
+  const clubName    = document.getElementById('signup-club-name').value.trim();
+  const city         = document.getElementById('signup-city').value.trim();
+  const adminName    = document.getElementById('signup-admin-name').value.trim();
+  const adminEmail   = document.getElementById('signup-email').value.trim();
+  const adminMobile  = document.getElementById('signup-mobile').value.trim();
+  const password     = document.getElementById('signup-password').value;
+
+  if (!clubName || !adminName || !adminEmail || !password) {
+    toast('Please fill all required fields', 'error'); return;
+  }
+  if (!adminMobile || adminMobile.length !== 10) {
+    toast('Enter a valid 10-digit mobile number', 'error'); return;
+  }
+
+  showLoader('Creating your club…');
+  try {
+    const result = await api({ action: 'signupClub', clubName, city, adminName, adminEmail, adminMobile, password });
+    if (result.success) {
+      State.user = result.user;
+      LS.set('user', State.user);
+      toast('Welcome! Your 30-day free trial has started.', 'success');
+      await initApp();
+    } else {
+      toast(result.error || 'Signup failed', 'error');
     }
   } catch (err) {
     toast('Error: ' + err.message, 'error');
@@ -728,6 +770,7 @@ document.getElementById('save-attendance-btn').addEventListener('click', async (
       action: 'saveAttendance',
       meetingId: State.currentMeeting.MeetingID,
       updatedBy: State.user.email,
+      clubId: State.user.clubId,
       records,
     });
     if (res.success) {
