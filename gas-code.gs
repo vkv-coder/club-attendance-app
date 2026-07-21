@@ -34,6 +34,7 @@ function handleRequest(e) {
   try {
     switch (action) {
       case 'checkUser':          result = checkUser(p.email); break;
+      case 'verifyUserOtp':      result = verifyUserOtp(p.email, p.otp); break;
       case 'getSettings':        result = getSettings(p.clubId); break;
       case 'getMembers':         result = getMembers(p.clubId); break;
       case 'getMeetings':        result = getMeetings(p.clubId); break;
@@ -89,33 +90,61 @@ function ensureCol(sheet, headers, colName) {
 }
 
 // ── Users ─────────────────────────────────────────────────────
+// Step 1: confirm the email is a registered, active user, then email a
+// 6-digit code. The password field this used to accept was never actually
+// checked against anything - login succeeded for any registered active
+// email regardless of what was typed as the password. This closes that.
 function checkUser(email) {
   if (!email) return { success: false, error: 'No email provided' };
   const sheet   = ss.getSheetByName('Users');
   const data    = sheet.getDataRange().getValues();
   const headers = data[0];
   const eIdx    = headers.indexOf('EmailID');
-  const nIdx    = headers.indexOf('UserName');
-  const rIdx    = headers.indexOf('Role');
   const aIdx    = headers.indexOf('Active');
-  const cIdx    = headers.indexOf('ClubID');
 
   for (let i = 1; i < data.length; i++) {
     if ((data[i][eIdx] || '').toString().toLowerCase() !== email.toLowerCase()) continue;
     const active = data[i][aIdx];
-    if (active === true || active === 'TRUE' || active === 'Y' || active === true) {
-      return {
-        success: true,
-        user: {
-          email:  data[i][eIdx],
-          name:   data[i][nIdx],
-          role:   data[i][rIdx],
-          clubId: cIdx >= 0 ? ((data[i][cIdx] || 'CL001').toString()) : 'CL001'
-        }
-      };
+    if (active === true || active === 'TRUE' || active === 'Y') {
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      CacheService.getScriptCache().put('otp_' + email.toLowerCase(), otp, 300); // 5 min
+      MailApp.sendEmail(email, 'Your Club Attendance login code',
+        'Your login code is: ' + otp + '\n\nThis code expires in 5 minutes. If you didn\'t request this, you can ignore this email.');
+      return { success: true, otpSent: true };
     } else {
       return { success: false, error: 'Account inactive. Contact admin.' };
     }
+  }
+  return { success: false, error: 'Email not authorised. Contact admin.' };
+}
+
+// Step 2: verify the code, then return the same user object checkUser used to.
+function verifyUserOtp(email, otp) {
+  if (!email || !otp) return { success: false, error: 'Email and code required' };
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('otp_' + email.toLowerCase());
+  if (!cached || cached !== otp) return { success: false, error: 'Incorrect or expired code' };
+  cache.remove('otp_' + email.toLowerCase());
+
+  const sheet   = ss.getSheetByName('Users');
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const eIdx    = headers.indexOf('EmailID');
+  const nIdx    = headers.indexOf('UserName');
+  const rIdx    = headers.indexOf('Role');
+  const cIdx    = headers.indexOf('ClubID');
+
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i][eIdx] || '').toString().toLowerCase() !== email.toLowerCase()) continue;
+    return {
+      success: true,
+      user: {
+        email:  data[i][eIdx],
+        name:   data[i][nIdx],
+        role:   data[i][rIdx],
+        clubId: cIdx >= 0 ? ((data[i][cIdx] || 'CL001').toString()) : 'CL001'
+      }
+    };
   }
   return { success: false, error: 'Email not authorised. Contact admin.' };
 }
