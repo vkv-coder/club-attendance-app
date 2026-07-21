@@ -5,7 +5,18 @@
 // ============================================================
 
 const ss = SpreadsheetApp.getActiveSpreadsheet();
-
+const TG_BOT = 'AAHU6iv7BaCw1J69SpLVivXaDmFgoNdvPkE';
+const TG_CHAT = '8507770594';
+function tg(msg) {
+  try {
+    UrlFetchApp.fetch('https://api.telegram.org/bot' + TG_BOT + '/sendMessage', {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ chat_id: TG_CHAT, text: msg, parse_mode: 'HTML' }),
+      muteHttpExceptions: true
+    });
+  } catch (e) { /* never let a notification failure break signup */ }
+}
 function doGet(e) {
   const result = handleRequest(e);
   const json = JSON.stringify(result);
@@ -33,8 +44,8 @@ function handleRequest(e) {
   let result;
   try {
     switch (action) {
-      case 'checkUser':          result = checkUser(p.email); break;
-      case 'verifyUserOtp':      result = verifyUserOtp(p.email, p.otp); break;
+      case 'checkUser':          result = checkUser(p.email, p.password); break;
+      case 'signupClub':         result = signupClub(p); break;
       case 'getSettings':        result = getSettings(p.clubId); break;
       case 'getMembers':         result = getMembers(p.clubId); break;
       case 'getMeetings':        result = getMeetings(p.clubId); break;
@@ -90,63 +101,184 @@ function ensureCol(sheet, headers, colName) {
 }
 
 // ── Users ─────────────────────────────────────────────────────
-// Step 1: confirm the email is a registered, active user, then email a
-// 6-digit code. The password field this used to accept was never actually
-// checked against anything - login succeeded for any registered active
-// email regardless of what was typed as the password. This closes that.
-function checkUser(email) {
+function _pwHash(pw, salt) { return Utilities.base64Encode(pw + '|' + salt); }
+
+function checkUser(email, password) {
   if (!email) return { success: false, error: 'No email provided' };
-  const sheet   = ss.getSheetByName('Users');
-  const data    = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const eIdx    = headers.indexOf('EmailID');
-  const aIdx    = headers.indexOf('Active');
-
-  for (let i = 1; i < data.length; i++) {
-    if ((data[i][eIdx] || '').toString().toLowerCase() !== email.toLowerCase()) continue;
-    const active = data[i][aIdx];
-    if (active === true || active === 'TRUE' || active === 'Y') {
-      const otp = String(Math.floor(100000 + Math.random() * 900000));
-      CacheService.getScriptCache().put('otp_' + email.toLowerCase(), otp, 300); // 5 min
-      MailApp.sendEmail(email, 'Your Club Attendance login code',
-        'Your login code is: ' + otp + '\n\nThis code expires in 5 minutes. If you didn\'t request this, you can ignore this email.');
-      return { success: true, otpSent: true };
-    } else {
-      return { success: false, error: 'Account inactive. Contact admin.' };
-    }
-  }
-  return { success: false, error: 'Email not authorised. Contact admin.' };
-}
-
-// Step 2: verify the code, then return the same user object checkUser used to.
-function verifyUserOtp(email, otp) {
-  if (!email || !otp) return { success: false, error: 'Email and code required' };
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get('otp_' + email.toLowerCase());
-  if (!cached || cached !== otp) return { success: false, error: 'Incorrect or expired code' };
-  cache.remove('otp_' + email.toLowerCase());
-
   const sheet   = ss.getSheetByName('Users');
   const data    = sheet.getDataRange().getValues();
   const headers = data[0];
   const eIdx    = headers.indexOf('EmailID');
   const nIdx    = headers.indexOf('UserName');
   const rIdx    = headers.indexOf('Role');
+  const aIdx    = headers.indexOf('Active');
   const cIdx    = headers.indexOf('ClubID');
+  const pIdx    = headers.indexOf('Password');
 
   for (let i = 1; i < data.length; i++) {
     if ((data[i][eIdx] || '').toString().toLowerCase() !== email.toLowerCase()) continue;
+    const active = data[i][aIdx];
+    if (!(active === true || active === 'TRUE' || active === 'Y')) {
+      return { success: false, error: 'Account inactive. Contact admin.' };
+    }
+    // Password check — only enforced if a password has been set on this row,
+    // so existing manually-added users keep working without a forced reset.
+    const storedPw = pIdx >= 0 ? (data[i][pIdx] || '') : '';
+    if (storedPw) {
+      if (!password || _pwHash(password, email.toLowerCase()) !== storedPw) {
+        return { success: false, error: 'Incorrect password.' };
+      }
+    }
+    const clubId = cIdx >= 0 ? ((data[i][cIdx] || 'CL001').toString()) : 'CL001';
+
+    // Trial/plan gate — look up the club's plan + trial status
+    const gate = _checkClubAccess(clubId);
+    if (!gate.ok) return { success: false, error: gate.error };
+
     return {
       success: true,
-      user: {
-        email:  data[i][eIdx],
-        name:   data[i][nIdx],
-        role:   data[i][rIdx],
-        clubId: cIdx >= 0 ? ((data[i][cIdx] || 'CL001').toString()) : 'CL001'
-      }
+      user: { email: data[i][eIdx], name: data[i][nIdx], role: data[i][rIdx], clubId }
     };
   }
   return { success: false, error: 'Email not authorised. Contact admin.' };
+}
+
+function _checkClubAccess(clubId) {
+  const sheet = ss.getSheetByName('Clubs');
+  if (!sheet) return { ok: true }; // no Clubs sheet at all = backward-compat, allow
+  const data     = sheet.getDataRange().getValues();
+  const headers  = data[0];
+  const idIdx    = headers.indexOf('ClubID');
+  const planIdx  = headers.indexOf('Plan');
+  const trialIdx = headers.indexOf('TrialStartedAt');
+  const activeIdx= headers.indexOf('Active');
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i][idIdx] || '').toString() !== clubId) continue;
+    if (activeIdx >= 0 && !(data[i][activeIdx] === true || data[i][activeIdx] === 'TRUE')) {
+      return { ok: false, error: 'This club account has been deactivated. Contact vkvcoder.support@gmail.com.' };
+    }
+    const plan = planIdx >= 0 ? (data[i][planIdx] || 'trial') : 'trial';
+    if (plan === 'paid') return { ok: true };
+    // trial plan — check 30-day window from TrialStartedAt (not started yet = still fine)
+    const startedAt = trialIdx >= 0 ? data[i][trialIdx] : null;
+    if (!startedAt) return { ok: true };
+    const start = new Date(startedAt);
+    const daysPassed = Math.floor((new Date() - start) / (1000 * 60 * 60 * 24));
+    if (daysPassed >= 30) {
+      return { ok: false, error: 'Your 30-day free trial has ended. Your data is safe — contact vkvcoder.support@gmail.com to continue using Club Attendance App.' };
+    }
+    return { ok: true };
+  }
+  return { ok: true }; // ClubID not found in Clubs sheet = backward-compat (e.g. CL001 default), allow
+}
+
+function _nextClubId() {
+  const usedIds = new Set();
+  const clubsSheet = ss.getSheetByName('Clubs');
+  if (clubsSheet) {
+    const data = clubsSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const id = (data[i][0] || '').toString();
+      if (id.startsWith('CL')) usedIds.add(id);
+    }
+  }
+  // Reserve CL001 if your existing Users sheet already has rows using it
+  // (explicitly, or implicitly via a blank ClubID column/value) — this is
+  // your own pre-existing club, predating the Clubs sheet.
+  const usersSheet = ss.getSheetByName('Users');
+  if (usersSheet) {
+    const uData = usersSheet.getDataRange().getValues();
+    const uHeaders = uData[0];
+    const cIdx = uHeaders.indexOf('ClubID');
+    const eIdx = uHeaders.indexOf('EmailID');
+    for (let i = 1; i < uData.length; i++) {
+      if (!uData[i][eIdx]) continue;
+      const cid = cIdx >= 0 ? (uData[i][cIdx] || '').toString().trim() : '';
+      if (!cid || cid === 'CL001') { usedIds.add('CL001'); break; }
+    }
+  }
+  let n = 1, candidate;
+  do {
+    candidate = 'CL' + String(n).padStart(3, '0');
+    n++;
+  } while (usedIds.has(candidate));
+  return candidate;
+}
+
+function signupClub(payload) {
+  if (!payload.clubName || !payload.adminEmail || !payload.adminName || !payload.password) {
+    return { success: false, error: 'Club name, your name, email and password are required' };
+  }
+  if (!payload.adminMobile || payload.adminMobile.length !== 10) {
+    return { success: false, error: 'Enter a valid 10-digit mobile number' };
+  }
+  const usersSheet = ss.getSheetByName('Users');
+  const uData = usersSheet.getDataRange().getValues();
+  const uHeaders = uData[0];
+  const eIdx = uHeaders.indexOf('EmailID');
+  for (let i = 1; i < uData.length; i++) {
+    if ((uData[i][eIdx] || '').toString().toLowerCase() === payload.adminEmail.toLowerCase()) {
+      return { success: false, error: 'This email is already registered. Please log in instead.' };
+    }
+  }
+
+  let sheet = ss.getSheetByName('Clubs');
+  if (!sheet) {
+    sheet = ss.insertSheet('Clubs');
+    sheet.appendRow(['ClubID', 'ClubName', 'City', 'AdminEmail', 'Active', 'CreatedOn', 'Mobile', 'Plan', 'TrialStartedAt']);
+  }
+  let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  headers = ensureCol(sheet, headers, 'Mobile');
+  headers = ensureCol(sheet, headers, 'Plan');
+  headers = ensureCol(sheet, headers, 'TrialStartedAt');
+
+  const clubId = _nextClubId();
+  const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd-MMM-yyyy');
+  const row = headers.map(h => {
+    if (h === 'ClubID')         return clubId;
+    if (h === 'ClubName')       return payload.clubName;
+    if (h === 'City')           return payload.city || '';
+    if (h === 'AdminEmail')     return payload.adminEmail;
+    if (h === 'Active')         return true;
+    if (h === 'CreatedOn')      return now;
+    if (h === 'Mobile')         return payload.adminMobile;
+    if (h === 'Plan')           return 'trial';
+    if (h === 'TrialStartedAt') return '';
+    return '';
+  });
+  sheet.appendRow(row);
+
+  // Create admin user with password
+  let userHeaders = usersSheet.getRange(1, 1, 1, usersSheet.getLastColumn()).getValues()[0];
+  userHeaders = ensureCol(usersSheet, userHeaders, 'Password');
+  const pwHash = _pwHash(payload.password, payload.adminEmail.toLowerCase());
+  const uRow = userHeaders.map(h => {
+    if (h === 'EmailID')  return payload.adminEmail;
+    if (h === 'UserName') return payload.adminName;
+    if (h === 'Role')     return 'Admin';
+    if (h === 'Active')   return true;
+    if (h === 'ClubID')   return clubId;
+    if (h === 'Password') return pwHash;
+    return '';
+  });
+  usersSheet.appendRow(uRow);
+
+  // Default settings row (same as addClub)
+  const settingsSheet = ss.getSheetByName('Settings');
+  if (settingsSheet) {
+    const sHeaders = settingsSheet.getDataRange().getValues()[0];
+    ensureCol(settingsSheet, sHeaders, 'ClubID');
+    const freshH = settingsSheet.getRange(1, 1, 1, settingsSheet.getLastColumn()).getValues()[0];
+    settingsSheet.appendRow(freshH.map(h => {
+      if (h === 'ClubID') return clubId;
+      if (freshH.indexOf(h) === 0) return 'club name';
+      if (freshH.indexOf(h) === 1) return payload.clubName || '';
+      return '';
+    }));
+  }
+  tg('🆕 <b>New Club Attendance App Signup</b>\n\nClub: ' + payload.clubName + '\nAdmin: ' + payload.adminName + '\nEmail: ' + payload.adminEmail + '\nMobile: ' + payload.adminMobile);
+
+  return { success: true, clubId, user: { email: payload.adminEmail, name: payload.adminName, role: 'Admin', clubId } };
 }
 
 function getUsers(clubId) {
@@ -196,9 +328,9 @@ function updateUser(payload) {
     if ((data[i][eIdx] || '').toString().toLowerCase() !== payload.email.toLowerCase()) continue;
     if (rowClubId(data[i], headers) !== (payload.clubId || 'CL001')) continue;
     headers.forEach((h, j) => {
-      if (h === 'UserName' && payload.name   !== undefined) sheet.getRange(i+1,j+1).setValue(payload.name);
-      if (h === 'Role'     && payload.role   !== undefined) sheet.getRange(i+1,j+1).setValue(payload.role);
-      if (h === 'Active'   && payload.active !== undefined) sheet.getRange(i+1,j+1).setValue(payload.active);
+      if (h === 'UserName' && payload.name   !== undefined) sheet.getRange(i + 1, j + 1).setValue(payload.name);
+      if (h === 'Role'     && payload.role   !== undefined) sheet.getRange(i + 1, j + 1).setValue(payload.role);
+      if (h === 'Active'   && payload.active !== undefined) sheet.getRange(i + 1, j + 1).setValue(payload.active);
     });
     return { success: true };
   }
@@ -426,18 +558,18 @@ function addMeeting(payload) {
   const meetingId = 'MT' + String(lastNum + 1).padStart(4, '0');
   const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd-MMM-yyyy');
 
-  const freshHeaders = sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0];
+  const freshHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const row = freshHeaders.map(h => {
-    if (h === 'MeetingID')     return meetingId;
-    if (h === 'MeetingDate')   return payload.meetingDate;
-    if (h === 'MeetingTime')   return payload.meetingTime || '';
-    if (h === 'MeetingType')   return payload.meetingType || '';
-    if (h === 'MeetingSubName')return payload.meetingSubName || '';
-    if (h === 'Location')      return payload.location || '';
-    if (h === 'Remarks')       return payload.remarks || '';
-    if (h === 'CreatedBy')     return payload.createdBy || '';
-    if (h === 'CreatedOn')     return now;
-    if (h === 'ClubID')        return clubId;
+    if (h === 'MeetingID')      return meetingId;
+    if (h === 'MeetingDate')    return payload.meetingDate;
+    if (h === 'MeetingTime')    return payload.meetingTime || '';
+    if (h === 'MeetingType')    return payload.meetingType || '';
+    if (h === 'MeetingSubName') return payload.meetingSubName || '';
+    if (h === 'Location')       return payload.location || '';
+    if (h === 'Remarks')        return payload.remarks || '';
+    if (h === 'CreatedBy')      return payload.createdBy || '';
+    if (h === 'CreatedOn')      return now;
+    if (h === 'ClubID')         return clubId;
     return '';
   });
   sheet.appendRow(row);
@@ -451,7 +583,7 @@ function updateMeeting(payload) {
   const idIdx   = headers.indexOf('MeetingID');
   for (let i = 1; i < data.length; i++) {
     if ((data[i][idIdx] || '').toString() !== payload.meetingId) continue;
-    const set = (name, val) => { const j = headers.indexOf(name); if (j >= 0) sheet.getRange(i+1,j+1).setValue(val); };
+    const set = (name, val) => { const j = headers.indexOf(name); if (j >= 0) sheet.getRange(i + 1, j + 1).setValue(val); };
     set('MeetingDate',    payload.meetingDate);
     set('MeetingTime',    payload.meetingTime || '');
     set('MeetingType',    payload.meetingType);
@@ -525,22 +657,43 @@ function saveAttendance(payload) {
       sheet.getRange(existingMap[key], 2, 1, 9).setValues([vals]);
     } else {
       lastNum++;
-      sheet.appendRow(['AT' + String(lastNum).padStart(4,'0'), ...vals]);
+      sheet.appendRow(['AT' + String(lastNum).padStart(4, '0'), ...vals]);
     }
   });
+
+  _activateTrialIfNeeded(payload.clubId);
+
   return { success: true };
+}
+
+function _activateTrialIfNeeded(clubId) {
+  if (!clubId) return;
+  const sheet = ss.getSheetByName('Clubs');
+  if (!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idIdx = headers.indexOf('ClubID');
+  const trialIdx = headers.indexOf('TrialStartedAt');
+  if (trialIdx < 0) return;
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i][idIdx] || '').toString() !== clubId) continue;
+    if (!data[i][trialIdx]) {
+      sheet.getRange(i + 1, trialIdx + 1).setValue(new Date().toISOString());
+    }
+    return;
+  }
 }
 
 // ── Today Events ──────────────────────────────────────────────
 function getTodayEvents(clubId) {
   const members = getMembers(clubId || 'CL001').members;
   const today   = new Date();
-  const months  = ['january','february','march','april','may','june',
-                   'july','august','september','october','november','december'];
+  const months  = ['january', 'february', 'march', 'april', 'may', 'june',
+                   'july', 'august', 'september', 'october', 'november', 'december'];
 
   function matchesDay(dateStr) {
     if (!dateStr) return false;
-    const ds = dateStr.toString().toLowerCase().replace(/st|nd|rd|th/g,'').trim();
+    const ds = dateStr.toString().toLowerCase().replace(/st|nd|rd|th/g, '').trim();
     const parts = ds.split(/[\s\/\-]/);
     if (parts.length < 2) return false;
     let day, month;
@@ -577,7 +730,7 @@ function getMonthlyAnalysis(month, year, clubId) {
     if (meetClubIdx >= 0 && rowClubId(row, meetHeaders) !== clubId) continue;
     const d = (row[1] instanceof Date) ? row[1] : new Date(row[1]);
     if (isNaN(d.getTime())) continue;
-    if ((d.getMonth()+1) === month && d.getFullYear() === year) {
+    if ((d.getMonth() + 1) === month && d.getFullYear() === year) {
       monthMeetings.push({
         meetingId: row[0].toString(),
         date:      Utilities.formatDate(d, tz, 'dd-MMM-yyyy'),
@@ -586,7 +739,7 @@ function getMonthlyAnalysis(month, year, clubId) {
       });
     }
   }
-  monthMeetings.sort((a,b) => a.ts - b.ts);
+  monthMeetings.sort((a, b) => a.ts - b.ts);
 
   const attMap = {};
   if (monthMeetings.length) {
@@ -618,11 +771,13 @@ function getMonthlyAnalysis(month, year, clubId) {
       })
   }));
 
-  const monthNames = ['January','February','March','April','May','June',
-                      'July','August','September','October','November','December'];
-  return { success: true, month, year, monthName: monthNames[month-1],
-           meetings: monthMeetings.map(m => ({ meetingId: m.meetingId, date: m.date, type: m.type })),
-           memberReports };
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                       'July', 'August', 'September', 'October', 'November', 'December'];
+  return {
+    success: true, month, year, monthName: monthNames[month - 1],
+    meetings: monthMeetings.map(m => ({ meetingId: m.meetingId, date: m.date, type: m.type })),
+    memberReports
+  };
 }
 
 // ── Clubs (Super Admin) ───────────────────────────────────────
@@ -645,17 +800,10 @@ function addClub(payload) {
   let sheet = ss.getSheetByName('Clubs');
   if (!sheet) {
     sheet = ss.insertSheet('Clubs');
-    sheet.appendRow(['ClubID','ClubName','City','AdminEmail','Active','CreatedOn']);
+    sheet.appendRow(['ClubID', 'ClubName', 'City', 'AdminEmail', 'Active', 'CreatedOn']);
   }
   const data = sheet.getDataRange().getValues();
-  let lastNum = 0;
-  for (let i = 1; i < data.length; i++) {
-    if ((data[i][0] || '').toString().startsWith('CL')) {
-      const n = parseInt(data[i][0].toString().replace('CL','')) || 0;
-      if (n > lastNum) lastNum = n;
-    }
-  }
-  const clubId  = 'CL' + String(lastNum + 1).padStart(3, '0');
+  const clubId  = _nextClubId();
   const now     = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd-MMM-yyyy');
   const headers = data[0];
   const row     = headers.map(h => {
@@ -679,7 +827,7 @@ function addClub(payload) {
   if (settingsSheet) {
     const sHeaders = settingsSheet.getDataRange().getValues()[0];
     ensureCol(settingsSheet, sHeaders, 'ClubID');
-    const freshH = settingsSheet.getRange(1,1,1,settingsSheet.getLastColumn()).getValues()[0];
+    const freshH = settingsSheet.getRange(1, 1, 1, settingsSheet.getLastColumn()).getValues()[0];
     settingsSheet.appendRow(freshH.map(h => {
       if (h === 'ClubID') return clubId;
       if (freshH.indexOf(h) === 0) return 'club name';
@@ -700,9 +848,9 @@ function updateClub(payload) {
   for (let i = 1; i < data.length; i++) {
     if ((data[i][idIdx] || '').toString() !== payload.clubId) continue;
     headers.forEach((h, j) => {
-      if (h === 'ClubName' && payload.clubName !== undefined) sheet.getRange(i+1,j+1).setValue(payload.clubName);
-      if (h === 'City'     && payload.city     !== undefined) sheet.getRange(i+1,j+1).setValue(payload.city);
-      if (h === 'Active'   && payload.active   !== undefined) sheet.getRange(i+1,j+1).setValue(payload.active);
+      if (h === 'ClubName' && payload.clubName !== undefined) sheet.getRange(i + 1, j + 1).setValue(payload.clubName);
+      if (h === 'City'     && payload.city     !== undefined) sheet.getRange(i + 1, j + 1).setValue(payload.city);
+      if (h === 'Active'   && payload.active   !== undefined) sheet.getRange(i + 1, j + 1).setValue(payload.active);
     });
     return { success: true };
   }
