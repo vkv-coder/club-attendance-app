@@ -133,20 +133,19 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
   });
 });
 
-// ── LOGIN (step 1: request a code) ──────────────────────────
-let _loginEmail = '';
+// ── LOGIN ──────────────────────────────────────────────────
 document.getElementById('login-btn').addEventListener('click', async () => {
   const email = document.getElementById('login-email').value.trim();
-  if (!email) { toast('Please enter your email', 'error'); return; }
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) { toast('Please enter your email and password', 'error'); return; }
 
   showLoader('Checking access…');
   try {
-    const result = await api({ action: 'checkUser', email });
+    const result = await api({ action: 'checkUser', email, password });
     if (result.success) {
-      _loginEmail = email;
-      document.getElementById('login-step-email').style.display = 'none';
-      document.getElementById('login-step-otp').style.display = 'block';
-      document.getElementById('login-otp').value = '';
+      State.user = result.user;
+      LS.set('user', State.user);
+      await initApp();
     } else {
       toast(result.error || 'Access denied', 'error');
     }
@@ -154,31 +153,6 @@ document.getElementById('login-btn').addEventListener('click', async () => {
     toast('Error: ' + err.message, 'error');
   }
   hideLoader();
-});
-
-// ── LOGIN (step 2: verify the emailed code) ─────────────────
-document.getElementById('login-otp-btn').addEventListener('click', async () => {
-  const otp = document.getElementById('login-otp').value.trim();
-  if (!/^[0-9]{6}$/.test(otp)) { toast('Enter the 6-digit code from your email', 'error'); return; }
-
-  showLoader('Verifying…');
-  try {
-    const result = await api({ action: 'verifyUserOtp', email: _loginEmail, otp });
-    if (result.success) {
-      State.user = result.user;
-      LS.set('user', State.user);
-      await initApp();
-    } else {
-      toast(result.error || 'Verification failed', 'error');
-    }
-  } catch (err) {
-    toast('Error: ' + err.message, 'error');
-  }
-  hideLoader();
-});
-document.getElementById('login-otp-back').addEventListener('click', () => {
-  document.getElementById('login-step-otp').style.display = 'none';
-  document.getElementById('login-step-email').style.display = 'block';
 });
 
 // ── SIGNUP (new club self-registration) ───────────────────
