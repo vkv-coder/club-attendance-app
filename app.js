@@ -155,6 +155,54 @@ document.getElementById('login-btn').addEventListener('click', async () => {
   hideLoader();
 });
 
+// ── FORGOT PASSWORD ────────────────────────────────────────
+document.getElementById('show-forgot-link').addEventListener('click', () => {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('forgot-screen').style.display = 'flex';
+});
+document.getElementById('back-to-login-link').addEventListener('click', () => {
+  document.getElementById('forgot-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('forgot-step1').style.display = 'block';
+  document.getElementById('forgot-step2').style.display = 'none';
+  document.getElementById('forgot-email').value = '';
+  document.getElementById('forgot-otp').value = '';
+  document.getElementById('forgot-newpass').value = '';
+});
+document.getElementById('forgot-send-btn').addEventListener('click', async () => {
+  const email = document.getElementById('forgot-email').value.trim();
+  if (!email) { toast('Please enter your email', 'error'); return; }
+  showLoader('Sending code…');
+  try {
+    await api({ action: 'forgotPassword', email });
+    toast('If that email is registered, a code has been sent.', 'success');
+    document.getElementById('forgot-step1').style.display = 'none';
+    document.getElementById('forgot-step2').style.display = 'block';
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+  hideLoader();
+});
+document.getElementById('forgot-reset-btn').addEventListener('click', async () => {
+  const email = document.getElementById('forgot-email').value.trim();
+  const otp = document.getElementById('forgot-otp').value.trim();
+  const newPassword = document.getElementById('forgot-newpass').value;
+  if (!otp || !newPassword) { toast('Please enter the code and a new password', 'error'); return; }
+  showLoader('Resetting password…');
+  try {
+    const result = await api({ action: 'resetPassword', email, otp, newPassword });
+    if (result.success) {
+      toast('Password reset! Please sign in.', 'success');
+      document.getElementById('back-to-login-link').click();
+    } else {
+      toast(result.error || 'Reset failed', 'error');
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+  hideLoader();
+});
+
 // ── SIGNUP (new club self-registration) ───────────────────
 document.getElementById('show-signup-link').addEventListener('click', () => {
   document.getElementById('login-screen').style.display = 'none';

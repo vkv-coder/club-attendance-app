@@ -45,6 +45,8 @@ function handleRequest(e) {
   try {
     switch (action) {
       case 'checkUser':          result = checkUser(p.email, p.password); break;
+      case 'forgotPassword':     result = forgotPassword(p.email); break;
+      case 'resetPassword':      result = resetPassword(p.email, p.otp, p.newPassword); break;
       case 'signupClub':         result = signupClub(p); break;
       case 'getSettings':        result = getSettings(p.clubId); break;
       case 'getMembers':         result = getMembers(p.clubId); break;
@@ -102,6 +104,56 @@ function ensureCol(sheet, headers, colName) {
 
 // ── Users ─────────────────────────────────────────────────────
 function _pwHash(pw, salt) { return Utilities.base64Encode(pw + '|' + salt); }
+
+// FORGOT PASSWORD (step 1: email a code)
+function forgotPassword(email) {
+  if (!email) return { success: false, error: 'Email required' };
+  email = email.toString().toLowerCase().trim();
+  const sheet   = ss.getSheetByName('Users');
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const eIdx    = headers.indexOf('EmailID');
+
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i][eIdx] || '').toString().toLowerCase() === email) {
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      CacheService.getScriptCache().put('capw_' + email, otp, 300); // 5 min
+      MailApp.sendEmail(email, 'Your Club Attendance password reset code',
+        'Your password reset code is: ' + otp + '\n\nThis code expires in 5 minutes. If you didn\'t request this, you can ignore this email.');
+      break;
+    }
+  }
+  // Same response whether or not the email matched, so this can't be used
+  // to check which emails are registered.
+  return { success: true };
+}
+
+// FORGOT PASSWORD (step 2: verify code + set new password)
+function resetPassword(email, otp, newPassword) {
+  if (!email || !otp || !newPassword) return { success: false, error: 'Email, code and new password are required' };
+  email = email.toString().toLowerCase().trim();
+  otp   = String(otp);
+  const cache  = CacheService.getScriptCache();
+  const cached = cache.get('capw_' + email);
+  if (!cached || cached !== otp) return { success: false, error: 'Incorrect or expired code' };
+  if (newPassword.length < 4) return { success: false, error: 'Password must be at least 4 characters' };
+
+  const sheet = ss.getSheetByName('Users');
+  const data  = sheet.getDataRange().getValues();
+  let headers = data[0];
+  const eIdx  = headers.indexOf('EmailID');
+  headers = ensureCol(sheet, headers, 'Password');
+  const pIdx  = headers.indexOf('Password');
+
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i][eIdx] || '').toString().toLowerCase() === email) {
+      sheet.getRange(i + 1, pIdx + 1).setValue(_pwHash(newPassword, email));
+      cache.remove('capw_' + email);
+      return { success: true };
+    }
+  }
+  return { success: false, error: 'Account not found' };
+}
 
 function checkUser(email, password) {
   if (!email) return { success: false, error: 'No email provided' };
