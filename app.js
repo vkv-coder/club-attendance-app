@@ -33,7 +33,12 @@ function api(params) {
   if (State.user?.clubId && params.action !== 'checkUser') {
     params = { ...params, clubId: State.user.clubId };
   }
-  return new Promise((resolve, reject) => {
+  // Resolves with {success:false, error} on timeout/network failure instead
+  // of rejecting — every caller already checks res.success/res.error (see
+  // confirmDeleteMeeting etc.) but most don't wrap `await api(...)` in a
+  // try/catch, so a reject here would skip their hideLoader() call and leave
+  // the loading spinner stuck forever with no feedback.
+  return new Promise((resolve) => {
     const cbName = '__gasCb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const u = new URL(GAS_URL);
 
@@ -42,7 +47,7 @@ function api(params) {
     });
     u.searchParams.set('callback', cbName);
 
-    const timer = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 20000);
+    const timer = setTimeout(() => { cleanup(); resolve({ success: false, error: 'Timeout — please try again' }); }, 20000);
 
     function cleanup() {
       clearTimeout(timer);
@@ -56,7 +61,7 @@ function api(params) {
     const script = document.createElement('script');
     script.id = cbName;
     script.src = u.toString();
-    script.onerror = () => { cleanup(); reject(new Error('Failed to reach server')); };
+    script.onerror = () => { cleanup(); resolve({ success: false, error: 'Failed to reach server' }); };
     document.head.appendChild(script);
   });
 }
