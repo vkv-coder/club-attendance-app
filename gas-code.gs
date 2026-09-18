@@ -5,8 +5,8 @@
 // ============================================================
 
 const ss = SpreadsheetApp.getActiveSpreadsheet();
-const TG_BOT = 'AAHU6iv7BaCw1J69SpLVivXaDmFgoNdvPkE';
-const TG_CHAT = '8507770594';
+const TG_BOT = PropertiesService.getScriptProperties().getProperty('TG_BOT');
+const TG_CHAT = PropertiesService.getScriptProperties().getProperty('TG_CHAT');
 function tg(msg) {
   try {
     UrlFetchApp.fetch('https://api.telegram.org/bot' + TG_BOT + '/sendMessage', {
